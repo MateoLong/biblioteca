@@ -1,0 +1,11 @@
+{
+  "name": "biblioteca-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify": "node drive.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

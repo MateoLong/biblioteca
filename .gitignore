@@ -1,0 +1,8 @@
+datos/
+.verify/tmp/
+.verify/evidence/
+tests/e2e/node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+.impeccable/review/

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es-UY">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Biblioteca</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Ir al contenido</a>
+  <header class="band">
+    <div class="band-inner">
+      <a class="brand" href="#/mostrador" aria-label="Inicio">
+        <span class="brand-mark" aria-hidden="true"><svg><use href="icons.svg#i-library"/></svg></span>
+        <span class="brand-name" data-testid="library-name">Biblioteca</span>
+      </a>
+      <nav class="tabs" aria-label="Secciones">
+        <a href="#/mostrador" data-tab="mostrador"><svg aria-hidden="true"><use href="icons.svg#i-arrow-left-right"/></svg>Mostrador</a>
+        <a href="#/atrasados" data-tab="atrasados"><svg aria-hidden="true"><use href="icons.svg#i-calendar-clock"/></svg>Atrasados<span class="count" data-testid="overdue-count" hidden></span></a>
+        <a href="#/libros" data-tab="libros"><svg aria-hidden="true"><use href="icons.svg#i-book-open"/></svg>Libros</a>
+        <a href="#/alumnos" data-tab="alumnos"><svg aria-hidden="true"><use href="icons.svg#i-users"/></svg>Alumnos</a>
+        <a href="#/ajustes" data-tab="ajustes"><svg aria-hidden="true"><use href="icons.svg#i-settings"/></svg>Ajustes</a>
+      </nav>
+    </div>
+  </header>
+  <div class="demo-strip" data-testid="demo-strip" hidden>
+    <p>Estás viendo <strong>datos de ejemplo</strong>. Probá todo lo que quieras; cuando empieces en serio, borralos.</p>
+    <button type="button" class="btn btn-quiet" data-action="clear-demo">Borrar datos de ejemplo</button>
+  </div>
+  <main id="main" tabindex="-1"></main>
+  <div class="toasts" aria-live="polite" aria-atomic="false"></div>
+  <script src="app.js"></script>
+</body>
+</html>
