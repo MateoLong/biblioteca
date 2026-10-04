@@ -60,6 +60,26 @@ function parseDue(value) {
   if (!s) throw new RegistryError("invalid", "No entendí la fecha de devolución.");
   return s;
 }
+/**
+ * A date as it comes out of a spreadsheet cell: an Excel date serial (45933),
+ * dd/mm/yyyy, dd/mm/yy, dd/mm (this year), or yyyy-mm-dd. Empty -> null.
+ */
+export function sheetDate(value, thisYear = new Date().getFullYear()) {
+  const v = String(value ?? "").trim();
+  if (!v) return null;
+  if (/^\d+(\.\d+)?$/.test(v) && Number(v) > 20000 && Number(v) < 80000) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(Number(v)) * 86400000);
+    return d.toISOString().slice(0, 10);
+  }
+  let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  let iso = null;
+  if (m) iso = `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = v.match(/^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?$/);
+  if (m) iso = `${m[3] ? (m[3].length === 2 ? "20" + m[3] : m[3]) : thisYear}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  if (!iso || !validIso(iso)) throw new RegistryError("invalid", `No entendí la fecha «${v}». Escribila como 17/10/2026.`);
+  return iso;
+}
+
 function positiveInt(value, label) {
   const n = Number(value);
   if (!Number.isInteger(n)) throw new RegistryError("invalid", `${label} tiene que ser un número.`);
@@ -528,32 +548,141 @@ export class Registry {
     return { added, skipped, errors: errors.slice(0, 20) };
   }
 
-  exportCsv(kind) {
-    const dmy = (iso) => (iso ? iso.split("-").reverse().join("/") : "");
-    const lines = [];
-    if (kind === "loans") {
-      lines.push(["Código", "Libro", "Autor", "Alumno", "Clase", "Prestado", "Vence", "Devuelto", "Estado"]);
-      for (const l of this._sortedLoans(this.state.loans)) {
-        const state = !l.open ? "Devuelto" : l.overdue ? "Atrasado" : "Prestado";
-        lines.push([l.code, l.title, l.author, l.student, l.grade, dmy(l.lent_on), dmy(l.due_on), dmy(l.returned_on), state]);
+  /**
+   * Bring over an existing loan registry: one row per loan with the student, the book
+   * (title or code) and optionally the lent / due / returned dates. Students and books
+   * that are not on the list yet are created and named in the result. Each row is all or
+   * nothing; rows already imported are skipped. Accepts the app's own Préstamos export.
+   */
+  importLoans(rows) {
+    rows = (rows || []).map((r) => (r || []).map((c) => String(c ?? "").trim()));
+    const top = rows.findIndex((r) => r.some(Boolean));
+    if (top < 0) throw new RegistryError("invalid", "El archivo está vacío.");
+    const alias = {
+      alumno: "alumno", nombre: "alumno", estudiante: "alumno", "nombre del alumno": "alumno",
+      clase: "clase", grado: "clase", grupo: "clase",
+      libro: "libro", titulo: "libro", "titulo del libro": "libro",
+      autor: "autor", codigo: "codigo", ejemplar: "codigo",
+      prestado: "prestado", fecha: "prestado", "fecha de prestamo": "prestado", desde: "prestado", "se lo llevo": "prestado",
+      vence: "vence", vuelve: "vence", "fecha de devolucion": "vence", devolver: "vence", hasta: "vence",
+      devuelto: "devuelto", devolvio: "devuelto", "fecha devuelto": "devuelto", "devuelto el": "devuelto",
+    };
+    const col = new Map();
+    rows[top].forEach((h, i) => { const k = alias[norm(h)]; if (k && !col.has(k)) col.set(k, i); });
+    if (!col.has("alumno") || !(col.has("libro") || col.has("codigo"))) {
+      throw new RegistryError("invalid", "La primera fila tiene que tener los títulos de las columnas: Alumno, Libro (o Código) y, si querés, Clase, Prestado, Vence y Devuelto.");
+    }
+    const get = (row, k) => (col.has(k) ? row[col.get(k)] || "" : "");
+    const today = this.today();
+    const res = { added: 0, returned: 0, skipped: 0, new_students: [], new_books: [], errors: [] };
+
+    rows.slice(top + 1).forEach((row, i) => {
+      if (!row.some(Boolean)) return;
+      const line = top + 2 + i;
+      const before = this.state;
+      const created = { students: [], books: [] };
+      try {
+        const name = get(row, "alumno");
+        if (!name) throw new RegistryError("invalid", "Falta el alumno.");
+        const grade = get(row, "clase");
+        const year = Number(today.slice(0, 4));
+        const lentOn = sheetDate(get(row, "prestado"), year) || today;
+        const returnedOn = sheetDate(get(row, "devuelto"), year);
+        const dueOn = sheetDate(get(row, "vence"), year) || addDays(lentOn, this.state.settings.loan_days);
+        if (dueOn < lentOn) throw new RegistryError("invalid", "La fecha de vencimiento es anterior al préstamo.");
+        if (returnedOn && returnedOn < lentOn) throw new RegistryError("invalid", "La fecha de devolución es anterior al préstamo.");
+
+        // Student: same name (and class, when given); create it when missing.
+        let matches = this.state.students.filter((s) => norm(s.name) === norm(name) && (!grade || gradeKey(s.grade) === gradeKey(grade)));
+        if (matches.length > 1) throw new RegistryError("invalid", `Hay ${matches.length} alumnos llamados ${name}; agregá la clase.`);
+        let student = matches[0];
+        if (!student) { student = this.addStudent(name, grade); created.students.push(`${student.name}${student.grade ? ` (${student.grade})` : ""}`); }
+
+        // Book: by code, else by title (and author when both have one).
+        const code = get(row, "codigo"), title = get(row, "libro"), author = get(row, "autor");
+        const open = returnedOn == null;
+        let copy = code ? this._copyByCode(code) : null;
+        let book = copy ? this.state.books.find((b) => b.id === copy.book_id)
+          : title ? this.state.books.find((b) => norm(b.title) === norm(title) && (!author || !b.author || norm(b.author) === norm(author))) : null;
+        if (!book && !title) throw new RegistryError("invalid", `No hay ningún ejemplar con el código ${code}.`);
+
+        // Already imported: same student, same book, same day.
+        if (book && this.state.loans.some((l) => l.student_id === student.id && l.lent_on === lentOn && this._copy(l.copy_id).book_id === book.id)) {
+          if (this.state !== before) { this.state = before; this._save(this.state); }
+          res.skipped++;
+          return;
+        }
+
+        // Copy: the one with that code, else a free copy of the title; create what's missing.
+        if (!book) { book = this.addBook(title, author, 1, code ? [code] : []); created.books.push(book.title); }
+        else if (code && !copy) { this.addCopy(book.id, code); }
+        if (!copy) {
+          const copies = this.state.copies.filter((c) => c.book_id === book.id && !c.archived);
+          copy = code ? this._copyByCode(code) : (open ? copies.find((c) => !this._openLoanForCopy(c.id)) : copies[0]);
+          if (!copy) throw new RegistryError("invalid", `Todos los ejemplares de ${book.title} ya figuran prestados. Agregá otro ejemplar en Libros.`);
+        }
+        if (open) {
+          const holder = this._openLoanForCopy(copy.id);
+          if (holder) throw new RegistryError("copy_on_loan", `El ejemplar ${copy.code} ya figura prestado a ${this._present(holder).student}.`);
+        }
+        this._write((s) => {
+          s.loans.push({ id: this._nextId("loan"), copy_id: copy.id, student_id: student.id, lent_on: lentOn, due_on: dueOn, returned_on: returnedOn });
+        });
+        res.added++;
+        if (!open) res.returned++;
+        res.new_students.push(...created.students);
+        res.new_books.push(...created.books);
+      } catch (err) {
+        if (!(err instanceof RegistryError)) throw err;
+        if (this.state !== before) { this.state = before; this._save(this.state); }
+        res.errors.push(`Fila ${line}: ${err.message}`);
       }
-    } else if (kind === "books") {
-      lines.push(["Código", "Título", "Autor", "Estado", "Lo tiene", "Clase", "Vence"]);
+    });
+    res.errors = res.errors.slice(0, 20);
+    return res;
+  }
+
+  /** The three lists she can download, as columns + typed rows (dates stay ISO). */
+  exportTable(kind) {
+    const D = "date";
+    if (kind === "loans") {
+      return {
+        name: "Préstamos",
+        columns: [["Código", 10], ["Libro", 34], ["Autor", 24], ["Alumno", 26], ["Clase", 8], ["Prestado", 12, D], ["Vence", 12, D], ["Devuelto", 12, D], ["Estado", 11]],
+        rows: this._sortedLoans(this.state.loans).map((l) => [l.code, l.title, l.author, l.student, l.grade, l.lent_on, l.due_on, l.returned_on,
+          !l.open ? "Devuelto" : l.overdue ? "Atrasado" : "Prestado"]),
+      };
+    }
+    if (kind === "books") {
+      const rows = [];
       for (const b of this.books(true)) {
         for (const c of this.book(b.id).copies) {
-          const state = c.archived || b.archived ? "Dado de baja" : c.loan ? "Prestado" : "Disponible";
-          lines.push([c.code, b.title, b.author, state, c.loan?.student || "", c.loan?.grade || "", c.loan ? dmy(c.loan.due_on) : ""]);
+          rows.push([c.code, b.title, b.author, c.archived || b.archived ? "Dado de baja" : c.loan ? "Prestado" : "Disponible",
+            c.loan?.student || "", c.loan?.grade || "", c.loan?.due_on || null]);
         }
       }
-    } else if (kind === "students") {
-      lines.push(["Nombre", "Clase", "Libros en su poder", "Atrasados", "Archivado"]);
-      for (const s of this.students(true)) lines.push([s.name, s.grade, s.open_loans, s.overdue, s.archived ? "Sí" : ""]);
-    } else {
-      throw new RegistryError("invalid", "Tipo de exportación desconocido.");
+      return { name: "Libros", columns: [["Código", 10], ["Título", 34], ["Autor", 24], ["Estado", 13], ["Lo tiene", 26], ["Clase", 8], ["Vence", 12, D]], rows };
     }
-    const cell = (v) => { const t = String(v ?? ""); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    if (kind === "students") {
+      return {
+        name: "Alumnos",
+        columns: [["Nombre", 28], ["Clase", 8], ["Libros en su poder", 18], ["Atrasados", 11], ["Archivado", 11]],
+        rows: this.students(true).map((s) => [s.name, s.grade, s.open_loans, s.overdue, s.archived ? "Sí" : ""]),
+      };
+    }
+    throw new RegistryError("invalid", "Tipo de exportación desconocido.");
+  }
+
+  exportCsv(kind) {
+    const { columns, rows } = this.exportTable(kind);
+    const dmy = (iso) => (iso ? iso.split("-").reverse().join("/") : "");
+    const cell = (v, i) => {
+      const t = columns[i][2] === "date" ? dmy(v) : String(v ?? "");
+      return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const lines = [columns.map((c) => c[0]).join(";"), ...rows.map((r) => r.map(cell).join(";"))];
     // BOM so Excel opens accents correctly; ';' because Spanish Excel expects it.
-    return "﻿" + lines.map((r) => r.map(cell).join(";")).join("\r\n") + "\r\n";
+    return "﻿" + lines.join("\r\n") + "\r\n";
   }
 
   // ── backup ─────────────────────────────────────────────────────────

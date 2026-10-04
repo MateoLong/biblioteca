@@ -1,7 +1,8 @@
 // The "server" now lives in the page: the same routes the screens always called,
 // answered by the Registry, with everything saved on this device (IndexedDB).
-import { Registry, RegistryError, emptyState, localToday } from "./registry.js";
+import { Registry, RegistryError, emptyState, localToday, readCsv } from "./registry.js";
 import * as DEMO from "./demo-data.js";
+import { writeXlsx } from "./xlsx.js";
 
 const DB_NAME = "biblioteca";
 const STORE = "kv";
@@ -101,6 +102,7 @@ const ROUTES = [
   ["PATCH", /^\/api\/settings$/, (q, b) => registry.updateSettings(b)],
   ["POST", /^\/api\/import\/(books|students)$/, (q, b, kind) =>
     (Array.isArray(b.rows) ? registry.importRows(kind, b.rows) : registry.importCsv(kind, b.text || ""))],
+  ["POST", /^\/api\/import\/loans$/, (q, b) => registry.importLoans(Array.isArray(b.rows) ? b.rows : readCsv(b.text || ""))],
   ["POST", /^\/api\/restore$/, (q, b) => registry.restore(b.text || "")],
   ["POST", /^\/api\/demo$/, () => registry.loadDemo(DEMO)],
   ["DELETE", /^\/api\/demo$/, () => registry.clearDemo()],
@@ -126,21 +128,21 @@ export async function call(method, path, body = {}) {
   throw { status: 404, data: { error: "No encontrado." } };
 }
 
-// ── files: Excel (CSV) exports and full backups ────────────────────────
+// ── files: Excel exports and full backups ─────────────────────────────
 export function download(kind) {
   const day = registry.today();
-  let text, name, type;
+  let data, name, type;
   if (kind === "backup") {
-    text = registry.backup();
+    data = registry.backup();
     name = `biblioteca-copia-${day}.json`;
     type = "application/json";
   } else {
     const names = { loans: "prestamos", books: "libros", students: "alumnos" };
-    text = registry.exportCsv(kind);
-    name = `${names[kind]}-${day}.csv`;
-    type = "text/csv;charset=utf-8";
+    data = writeXlsx(registry.exportTable(kind));
+    name = `${names[kind]}-${day}.xlsx`;
+    type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   }
-  const url = URL.createObjectURL(new Blob([text], { type }));
+  const url = URL.createObjectURL(new Blob([data], { type }));
   const a = Object.assign(document.createElement("a"), { href: url, download: name });
   document.body.append(a);
   a.click();

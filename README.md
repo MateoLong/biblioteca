@@ -14,7 +14,7 @@ Registro de préstamos para la biblioteca de la escuela: quién se llevó qué l
 - **Mostrador**: prestar y devolver (también con lector de código de barras por Bluetooth), y la caja **Preguntá**: "¿Quién tiene Matilda?", "Martina", "4°B", "atrasados", "más leídos".
 - **Atrasados**: la lista para reclamar.
 - **Libros / Alumnos**: fichas con historial. Nada se borra: se archiva.
-- **Ajustes**: días de préstamo, máximo de libros, cargar planillas (.xlsx, .csv o filas pegadas), copias de seguridad, planillas para Excel.
+- **Ajustes**: días de préstamo, máximo de libros, cargar alumnos, libros y **préstamos** desde Excel (.xlsx, .csv o filas pegadas), copias de seguridad, y las listas en Excel (.xlsx).
 
 ## Probarla desde una Mac
 

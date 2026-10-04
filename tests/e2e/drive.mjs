@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join, dirname, extname, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readXlsx } from "../../app/static/xlsx.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const STATIC = join(ROOT, "app", "static");
@@ -237,6 +238,23 @@ try {
   await page.tap("#import-students button[type=submit]");
   await page.waitForSelector("#import-students .notice-error");
   check("xlsx", "a broken .xlsx gets a clear Spanish message", (await page.textContent("#import-students .notice-error")).includes("no es una planilla de Excel"));
+
+  // Her old loan registry, made in Microsoft Excel with real date cells.
+  await page.setInputFiles("[data-testid=import-loans-file]", join(ROOT, "tests", "fixtures", "prestamos-excel.xlsx"));
+  await page.tap("#import-loans button[type=submit]");
+  await page.waitForSelector("#import-loans [data-testid=import-result]");
+  const loansMsg = (await page.textContent("#import-loans [data-testid=import-result]")).replace(/\s+/g, " ").trim();
+  st = await saved();
+  const anaNueva = studentNamed(st, "Ana Nueva");
+  const anaLoan = st.loans.find((l) => l.student_id === anaNueva?.id);
+  const joaquinPrincipito = st.loans.find((l) => l.student_id === studentNamed(st, "Joaquín Pereira").id && l.lent_on === "2026-09-20");
+  readback.importLoans = { msg: loansMsg, ana: anaLoan && { lent_on: anaLoan.lent_on, due_on: anaLoan.due_on, returned_on: anaLoan.returned_on }, joaquin: joaquinPrincipito && joaquinPrincipito.returned_on };
+  check("loans-import", "result names what was loaded and created, and which rows need a look",
+    /Cargué 2 préstamos \(1 ya devuelto/.test(loansMsg) && loansMsg.includes("Alumnos nuevos: Ana Nueva (1°A)") && loansMsg.includes("Libros nuevos: Un libro que no estaba")
+    && loansMsg.includes("Fila 2: Todos los ejemplares de Matilda ya figuran prestados") && loansMsg.includes("Fila 5: Falta el alumno"), loansMsg);
+  check("loans-import", "saved: Ana's loan from Excel's date cells (28/09 + 14 days) and Joaquín's returned one in history",
+    anaLoan && anaLoan.lent_on === "2026-09-28" && anaLoan.due_on === "2026-10-12" && anaLoan.returned_on === null && readback.importLoans.joaquin === "2026-10-02", JSON.stringify(readback.importLoans));
+  await shot("09b-ajustes-prestamos");
   await shot("09-ajustes-import");
 
   // ── F9 edit a due date as dd/mm on the student page ──
@@ -254,9 +272,12 @@ try {
 
   // ── F10 files: Excel export, backup, restore onto an empty iPad ──
   await go("ajustes");
-  const [csvDl] = await Promise.all([page.waitForEvent("download"), page.tap("[data-download=loans]")]);
-  const csvBytes = readFileSync(await csvDl.path());
-  check("export", "Préstamos file opens in Excel (BOM, ';', Spanish header)", csvBytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])) && csvBytes.toString("utf8").includes("Código;Libro;Autor;Alumno;Clase"), csvDl.suggestedFilename());
+  const [xlDl] = await Promise.all([page.waitForEvent("download"), page.tap("[data-download=loans]")]);
+  const xlRows = await readXlsx(readFileSync(await xlDl.path()));
+  const openNow = openLoans(await saved()).length;
+  readback.exportXlsx = { file: xlDl.suggestedFilename(), header: xlRows[0], rows: xlRows.length - 1 };
+  check("export", "Préstamos downloads as a real Excel .xlsx with every loan", xlDl.suggestedFilename() === `prestamos-${TODAY}.xlsx` && xlRows[0].join("|") === "Código|Libro|Autor|Alumno|Clase|Prestado|Vence|Devuelto|Estado" && xlRows.length - 1 === (await saved()).loans.length, JSON.stringify(readback.exportXlsx));
+  void openNow;
   const [bkDl] = await Promise.all([page.waitForEvent("download"), page.tap("[data-testid=backup]")]);
   const backupPath = join(EVIDENCE, bkDl.suggestedFilename());
   await bkDl.saveAs(backupPath);
@@ -277,7 +298,7 @@ try {
   await page.waitForSelector("[data-testid=demo-strip][hidden]", { state: "attached" });
   st = await saved();
   readback.afterClear = { demo: st.books.filter((b) => b.is_demo).length + st.students.filter((s) => s.is_demo).length, books: st.books.length, students: st.students.length, loans: st.loans.length };
-  check("clear-demo", "only demo rows are gone; the 3 real books and 5 real students stay", JSON.stringify(readback.afterClear) === '{"demo":0,"books":3,"students":5,"loans":0}', JSON.stringify(readback.afterClear));
+  check("clear-demo", "only demo rows are gone; the 4 real books, 6 real students and Ana Nueva's loan stay", JSON.stringify(readback.afterClear) === '{"demo":0,"books":4,"students":6,"loans":1}', JSON.stringify(readback.afterClear));
   await page.evaluate(() => { globalThis.BIBLIO_TODAY = "2026-10-12"; location.hash = "#/atrasados"; });
   await page.evaluate(() => { location.hash = "#/mostrador"; });
   await page.waitForTimeout(300);

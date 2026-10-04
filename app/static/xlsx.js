@@ -34,19 +34,26 @@ function listZip(b) {
   for (let n = 0; n < count; n++) {
     if (dv.getUint32(p, true) !== 0x02014b50) throw new XlsxError("La planilla está dañada.");
     const method = dv.getUint16(p + 10, true);
+    const crc = dv.getUint32(p + 16, true);
     const size = dv.getUint32(p + 20, true);
     const nameLen = dv.getUint16(p + 28, true);
     const extraLen = dv.getUint16(p + 30, true);
     const commentLen = dv.getUint16(p + 32, true);
     const local = dv.getUint32(p + 42, true);
     const name = td.decode(b.subarray(p + 46, p + 46 + nameLen)).replace(/^\//, "");
-    files.set(name, { method, size, local });
+    files.set(name, { method, crc, size, local });
     p += 46 + nameLen + extraLen + commentLen;
   }
   return files;
 }
 
-async function unzipEntry(b, { method, size, local }) {
+async function unzipEntry(b, entry) {
+  const out = await inflateEntry(b, entry);
+  if (crc32(out) !== entry.crc) throw new XlsxError("La planilla está dañada. Probá guardarla de nuevo desde Excel.");
+  return out;
+}
+
+async function inflateEntry(b, { method, size, local }) {
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
   if (dv.getUint32(local, true) !== 0x04034b50) throw new XlsxError("La planilla está dañada.");
   const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
@@ -132,4 +139,92 @@ function parseSheet(xml, shared) {
     rows[r - 1] = Array.from(cells, (c) => c ?? "");
   }
   return rows;
+}
+
+// ── writing ────────────────────────────────────────────────────────────
+// A real .xlsx for the downloads: one sheet, bold frozen header, column widths,
+// dates as Excel dates shown dd/mm/yyyy. Entries are stored (not compressed): the
+// files are small and this keeps the writer tiny.
+
+const xmlEsc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))
+  // characters XML 1.0 does not allow
+  .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+const colName = (i) => { let s = ""; for (i += 1; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + ((i - 1) % 26)) + s; return s; };
+const excelSerial = (iso) => Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86400000);
+
+/**
+ * @param table {name, columns: [[title, width, "date"?]], rows: any[][]}
+ * @returns Uint8Array with the .xlsx file
+ */
+export function writeXlsx({ name, columns, rows }) {
+  const cell = (v, r, c, header = false) => {
+    const ref = `${colName(c)}${r}`;
+    if (v == null || v === "") return "";
+    if (header) return `<c r="${ref}" t="inlineStr" s="1"><is><t>${xmlEsc(v)}</t></is></c>`;
+    if (columns[c][2] === "date") return `<c r="${ref}" s="2"><v>${excelSerial(v)}</v></c>`;
+    if (typeof v === "number") return `<c r="${ref}"><v>${v}</v></c>`;
+    return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xmlEsc(v)}</t></is></c>`;
+  };
+  const sheetRows = [
+    `<row r="1">${columns.map((col, c) => cell(col[0], 1, c, true)).join("")}</row>`,
+    ...rows.map((row, i) => `<row r="${i + 2}">${row.map((v, c) => cell(v, i + 2, c)).join("")}</row>`),
+  ];
+  const sheetName = xmlEsc(String(name).replace(/[\[\]:*?/\\]/g, "").slice(0, 31) || "Hoja1");
+  const files = {
+    "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
+    "_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${sheetName}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+    "xl/styles.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="dd/mm/yyyy"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`,
+    "xl/worksheets/sheet1.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${columns.map((col, c) => `<col min="${c + 1}" max="${c + 1}" width="${col[1] || 12}" customWidth="1"/>`).join("")}</cols><sheetData>${sheetRows.join("")}</sheetData></worksheet>`,
+  };
+  return zipStored(files);
+}
+
+let CRC_TABLE = null;
+function crc32(bytes) {
+  if (!CRC_TABLE) {
+    CRC_TABLE = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; CRC_TABLE[n] = c >>> 0; }
+  }
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function zipStored(files) {
+  const te = new TextEncoder();
+  const locals = [], centrals = [];
+  let offset = 0;
+  for (const [name, text] of Object.entries(files)) {
+    const nameBytes = te.encode(name), data = te.encode(text), crc = crc32(data);
+    const local = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true); // UTF-8 names
+    lv.setUint16(8, 0, true); lv.setUint32(14, crc, true); lv.setUint32(18, data.length, true); lv.setUint32(22, data.length, true);
+    lv.setUint16(26, nameBytes.length, true); local.set(nameBytes, 30);
+    const central = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(central.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(8, 0x0800, true);
+    cv.setUint16(10, 0, true); cv.setUint32(16, crc, true); cv.setUint32(20, data.length, true); cv.setUint32(24, data.length, true);
+    cv.setUint16(28, nameBytes.length, true); cv.setUint32(42, offset, true); central.set(nameBytes, 46);
+    locals.push(local, data);
+    centrals.push(central);
+    offset += local.length + data.length;
+  }
+  const centralSize = centrals.reduce((n, c) => n + c.length, 0);
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, centrals.length, true); ev.setUint16(10, centrals.length, true);
+  ev.setUint32(12, centralSize, true); ev.setUint32(16, offset, true);
+  const out = new Uint8Array(offset + centralSize + 22);
+  let p = 0;
+  for (const part of [...locals, ...centrals, end]) { out.set(part, p); p += part.length; }
+  return out;
 }

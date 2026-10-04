@@ -884,7 +884,7 @@ async function viewAjustes() {
 
       <div class="panel">
         <h2>Planillas para Excel</h2>
-        <p>Listas para abrir en Excel o Numbers, imprimir o mandar a la dirección.</p>
+        <p>Listas en Excel (.xlsx) para abrir en Excel o Numbers, imprimir o mandar a la dirección.</p>
         <div class="btn-col">
           <button type="button" class="btn btn-line" data-download="loans">${icon("download")}Préstamos</button>
           <button type="button" class="btn btn-line" data-download="books">${icon("download")}Libros</button>
@@ -914,6 +914,19 @@ Matilda;Roald Dahl;1;B-0040</pre>
         <label class="file-drop"><span class="field-label">…o elegí la planilla (Excel .xlsx o CSV)</span><input type="file" name="file" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" data-testid="import-books-file"></label>
         <div class="import-msg" aria-live="polite"></div>
         <div><button class="btn btn-go" type="submit">${icon("upload")}Cargar libros</button></div>
+      </form>
+
+      <form class="panel" id="import-loans">
+        <h2>Cargar préstamos desde Excel</h2>
+        <p>Para pasar el registro que ya tenés: un préstamo por fila. Sirven los que están afuera y también los ya devueltos (quedan en el historial).</p>
+        <pre class="sample">Alumno;Clase;Libro;Prestado;Vence;Devuelto
+Martina López;4°B;Matilda;01/10/2026;15/10/2026;
+Joaquín Pereira;4°B;B-0012;20/09/2026;04/10/2026;02/10/2026</pre>
+        <p class="muted" style="font-size:.9375rem">En <strong>Libro</strong> va el título o el código. <strong>Clase</strong>, <strong>Vence</strong> y <strong>Devuelto</strong> son opcionales; si falta <strong>Prestado</strong> uso hoy. Si un alumno o un libro todavía no está en la lista, lo agrego y te aviso cuáles.</p>
+        <label class="field"><span>Pegá las filas copiadas de Excel o Numbers (con la fila de títulos)</span><textarea class="input paste" name="paste" rows="4" placeholder="Alumno	Clase	Libro	Prestado" data-testid="import-loans-paste"></textarea></label>
+        <label class="file-drop"><span class="field-label">…o elegí la planilla (Excel .xlsx o CSV)</span><input type="file" name="file" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" data-testid="import-loans-file"></label>
+        <div class="import-msg" aria-live="polite"></div>
+        <div><button class="btn btn-go" type="submit">${icon("upload")}Cargar préstamos</button></div>
       </form>
 
       <div class="panel">
@@ -953,6 +966,27 @@ Matilda;Roald Dahl;1;B-0040</pre>
       } catch (err) { msg.innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`; }
     });
   }
+  $("#import-loans").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = $(".import-msg", e.target);
+    const file = e.target.file.files[0];
+    const pasted = e.target.paste.value;
+    if (!file && !pasted.trim()) { msg.innerHTML = `<div class="notice notice-error" role="alert">Pegá las filas o elegí un archivo primero.</div>`; return; }
+    try {
+      const body = !file ? { text: pasted }
+        : /\.xlsx$/i.test(file.name) ? { rows: await readXlsx(await file.arrayBuffer()) }
+        : { text: await file.text() };
+      const res = await api("POST", "/api/import/loans", body);
+      const parts = [`Cargué ${plural(res.added, "préstamo", "préstamos")}${res.returned ? ` (${res.returned} ya devuelto${res.returned === 1 ? "" : "s"}, quedan en el historial)` : ""}.`];
+      if (res.skipped) parts.push(`${res.skipped} ya estaba${res.skipped === 1 ? "" : "n"}.`);
+      msg.innerHTML = `<div class="notice ${res.errors.length ? "notice-warn" : "notice-ok"}" data-testid="import-result"><p>${parts.join(" ")}</p>
+        ${res.new_students.length ? `<p>Alumnos nuevos: ${esc(res.new_students.join(", "))}.</p>` : ""}
+        ${res.new_books.length ? `<p>Libros nuevos: ${esc(res.new_books.join(", "))}.</p>` : ""}
+        ${res.errors.length ? `<ul class="lines">${res.errors.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`;
+      e.target.reset();
+      refreshSummary();
+    } catch (err) { msg.innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`; }
+  });
   $$("[data-download]").forEach((b) => b.addEventListener("click", async () => {
     try {
       const name = download(b.dataset.download);
