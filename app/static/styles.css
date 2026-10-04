@@ -268,7 +268,8 @@ a.loan-tile:hover { transform: translateY(-3px) rotate(-.5deg); box-shadow: var(
 
 /* ── mostrador ─────────────────────────────────────────────────── */
 .desk { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 24px; align-items: start; }
-.counter { display: grid; gap: 18px; }
+.counter { display: grid; gap: 14px; align-content: start; }
+.counter .label-form { box-shadow: var(--shadow-2); }
 .switch { display: inline-grid; grid-template-columns: 1fr 1fr; background: var(--ground); border-radius: 999px; padding: 5px; justify-self: start; }
 .switch button {
   border: 0; background: transparent; border-radius: 999px; padding: 10px 24px; min-height: 46px;

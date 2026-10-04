@@ -232,7 +232,7 @@ async function viewMostrador(params) {
     <h1 class="sr-only">Mostrador</h1>
     ${empty ? firstRun() : ""}
     <div class="desk">
-      <section class="panel counter" aria-label="Préstamos y devoluciones">
+      <section class="counter" aria-label="Préstamos y devoluciones">
         <div class="switch" role="tablist" aria-label="Qué hacer">
           <button type="button" role="tab" id="tab-lend" aria-selected="${desk.mode === "lend"}" data-mode="lend">${icon("book-marked")}Prestar</button>
           <button type="button" role="tab" id="tab-return" aria-selected="${desk.mode === "return"}" data-mode="return">${icon("undo-2")}Devolver</button>
@@ -292,7 +292,7 @@ function renderCounter() {
     const due = addDays(TODAY, summary.settings.loan_days);
     body.innerHTML = `
       <form id="lend-form" class="label-form forro" data-print="stars" style="--c: var(--f-cobalto)" novalidate>
-        <div class="etiqueta etiqueta-form" style="--c: var(--f-girasol)">
+        <div class="etiqueta etiqueta-form" style="--c: var(--f-cobalto)">
           <div class="label-row combo"><span class="label-key" id="l-student-label">Nombre</span><div id="student-slot"></div></div>
           <div class="label-row combo"><span class="label-key" id="l-book-label">Libro</span><div id="copy-slot"></div></div>
           <div class="label-row"><label class="label-key" for="l-due">Vuelve</label>
@@ -313,7 +313,7 @@ function renderCounter() {
   } else {
     body.innerHTML = `
       <div class="label-form forro" data-print="stars" style="--c: var(--f-cobalto)">
-        <div class="etiqueta etiqueta-form" style="--c: var(--f-girasol)">
+        <div class="etiqueta etiqueta-form" style="--c: var(--f-cobalto)">
           <div class="label-row combo"><label class="label-key" for="r-q">Libro</label>
             <input class="line-input hand" id="r-q" placeholder="código, título o alumno" data-testid="return-input"></div>
           <p class="label-help">Elegí el libro de la lista, o escaneá el código y apretá Enter.</p>
@@ -589,6 +589,8 @@ function wireLoanActions(root = main) {
   }));
   $$("[data-due]", root).forEach((inp) => inp.addEventListener("change", async () => {
     const dueOn = parseDM(inp.value);
+    if (dueOn && dueOn === inp.dataset.saved) return; // one save per edit
+    if (dueOn) inp.dataset.saved = dueOn;
     if (!dueOn) { inp.setAttribute("aria-invalid", "true"); toast("No entendí la fecha. Escribila como 17/10.", { error: true }); return; }
     try {
       const loan = await api("PATCH", `/api/loans/${inp.dataset.due}`, { due_on: dueOn });
