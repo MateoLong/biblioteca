@@ -293,6 +293,7 @@ function firstRun() {
       <a class="btn btn-go" href="#/ajustes">${icon("upload")}Cargar desde Excel</a>
       <button type="button" class="btn btn-line" data-action="load-demo">${icon("sparkles")}Probar con datos de ejemplo</button>
     </div>
+    <p>¿Primera vez? Mirá <a href="#/ayuda">cómo se usa</a>, paso por paso.</p>
   </div>`;
 }
 function wireFirstRun() {
@@ -401,7 +402,7 @@ function paintCopySlot() {
     fetcher: (q) => api("GET", `/api/suggest/copies?mode=lend&q=${encodeURIComponent(q)}`),
     render: (c) => `<span class="forro swatch" ${forroAttrs(c.book_id)}></span>
       <span><span class="opt-main">${esc(c.title)}</span> <span class="code">${esc(c.code)}</span><br><span class="opt-sub">${esc(c.author || "")}</span></span>`,
-    emptyText: (q) => `No hay ejemplares disponibles de «${q}».`,
+    emptyText: (q) => `No hay ejemplares disponibles de «${q}». Si es un libro nuevo, agregalo en Libros.`,
     onPick: (c) => { desk.copy = c; clearLastResult(); paintCopySlot(); (desk.student ? $("[data-testid=lend-submit]") : $("#l-student"))?.focus(); },
   });
 }
@@ -704,7 +705,7 @@ async function viewLibro(id) {
       </tr>`).join("")}</tbody></table></div>
       ${b.archived ? "" : `<form id="add-copy" class="toolbar" style="margin-top:14px"><label class="field" style="flex:0 1 260px"><span>Agregar ejemplar</span><input class="input" name="code" placeholder="Código (opcional)"></label><button class="btn btn-line" type="submit" style="align-self:end">${icon("plus")}Agregar</button></form>`}
     </section>
-    <section class="section" aria-labelledby="hist-h"><h2 id="hist-h">Historial <small>${plural(b.history.length, "préstamo", "préstamos")}</small></h2>${historyTable(b.history, "student")}</section>`;
+    <section class="section" aria-labelledby="hist-h"><h2 id="hist-h">Historial <small>${plural(b.history.length, "préstamo", "préstamos")}</small></h2>${historyTable(b.history, "student", `Todavía nadie se lo llevó. Se presta desde el <a href="#/mostrador">Mostrador</a>.`)}</section>`;
 
   $("#edit-toggle").addEventListener("click", () => { $("#edit-form").hidden = !$("#edit-form").hidden; });
   $("#edit-form").addEventListener("submit", async (e) => {
@@ -728,8 +729,8 @@ async function viewLibro(id) {
   wireLoanActions();
 }
 
-function historyTable(rows, who) {
-  if (!rows.length) return `<p class="muted">Todavía no hay préstamos.</p>`;
+function historyTable(rows, who, empty) {
+  if (!rows.length) return `<p class="muted" data-testid="history-empty">${empty}</p>`;
   return `<div class="table-wrap"><table class="stack-sm"><thead><tr><th>${who === "student" ? "Alumno" : "Libro"}</th><th>Prestado</th><th>Vuelve / volvió</th><th class="hide-sm">Estado</th></tr></thead><tbody>
     ${rows.map((l) => `<tr>
       <td>${who === "student" ? `<a class="student-link" href="${studentHref(l.student_id)}">${esc(l.student)}</a> <span class="muted">${esc(l.grade)}</span>`
@@ -831,7 +832,7 @@ async function viewAlumno(id) {
             <button type="button" class="btn btn-line btn-sm" data-return="${esc(l.code)}">Devolver</button></td>
         </tr>`).join("")}</tbody></table></div>` : `<p class="muted">No tiene libros prestados.</p>`}
     </section>
-    <section class="section" aria-labelledby="hist-h"><h2 id="hist-h">Lo que leyó <small>${plural(s.history.length, "préstamo", "préstamos")}</small></h2>${historyTable(s.history, "book")}</section>`;
+    <section class="section" aria-labelledby="hist-h"><h2 id="hist-h">Lo que leyó <small>${plural(s.history.length, "préstamo", "préstamos")}</small></h2>${historyTable(s.history, "book", s.archived ? "Nunca se llevó un libro." : "Todavía no se llevó ningún libro. Prestale uno con el botón amarillo de arriba.")}</section>`;
 
   $("#edit-toggle").addEventListener("click", () => { $("#edit-form").hidden = !$("#edit-form").hidden; });
   $("#edit-form").addEventListener("submit", async (e) => {
@@ -932,7 +933,7 @@ Joaquín Pereira;4°B;B-0012;20/09/2026;04/10/2026;02/10/2026</pre>
       <div class="panel">
         <h2>Datos de ejemplo</h2>
         ${summary.has_demo
-          ? `<p>Hay datos de ejemplo cargados. Al borrarlos se van solo los libros, alumnos y préstamos inventados; lo que cargaste vos queda.</p><div><button type="button" class="btn btn-line btn-danger" data-action="clear-demo">Borrar datos de ejemplo</button></div>`
+          ? `<p>Hay datos de ejemplo cargados. Al borrarlos se van los libros y alumnos inventados, con todos sus préstamos (también los que hiciste con ellos). Tus libros y alumnos quedan.</p><div><button type="button" class="btn btn-line btn-danger" data-action="clear-demo">Borrar datos de ejemplo</button></div>`
           : `<p>Para probar la app sin miedo: carga libros, alumnos y préstamos inventados que después podés borrar.</p><div><button type="button" class="btn btn-line" data-action="load-demo">${icon("sparkles")}Cargar datos de ejemplo</button></div>`}
       </div>
     </div>`;
@@ -1009,13 +1010,64 @@ Joaquín Pereira;4°B;B-0012;20/09/2026;04/10/2026;02/10/2026</pre>
   wireFirstRun();
 }
 
+// ══ AYUDA ══════════════════════════════════════════════════════════════
+// Plain cards she can come back to when she forgets a step. No data is touched here.
+async function viewAyuda() {
+  await refreshSummary();
+  const days = summary.settings.loan_days;
+  const card = (id, ic, title, steps, link) => `<section class="panel help-card" aria-labelledby="h-${id}" data-testid="help-${id}">
+    <h2 id="h-${id}"><span class="help-icon">${icon(ic)}</span>${title}</h2>
+    <ol class="help-steps">${steps.map((s) => `<li>${s}</li>`).join("")}</ol>
+    ${link ? `<a class="btn btn-line btn-sm" href="${link[0]}">${link[1]}</a>` : ""}
+  </section>`;
+  main.innerHTML = `
+    <div class="page-head"><div><h1>Cómo se usa</h1><p>Lo de todos los días, paso por paso. Si algo no sale, volvé acá con el botón <strong>?</strong> de arriba.</p></div></div>
+    <div class="help-grid">
+      ${card("prestar", "book-marked", "Prestar un libro", [
+        "En el <strong>Mostrador</strong>, tocá <strong>Prestar</strong>.",
+        "En <strong>Nombre</strong>, escribí el nombre o la clase del alumno y tocalo en la lista.",
+        "En <strong>Libro</strong>, escribí el título o el código, o escanealo con el lector.",
+        `<strong>Vuelve</strong> ya trae la fecha (${plural(days, "día", "días")}). Para cambiarla, tocá 1, 2 o 3 semanas, o escribila como 17/10.`,
+        "Tocá el botón amarillo <strong>Prestar</strong>.",
+      ], ["#/mostrador", "Ir al Mostrador"])}
+      ${card("devolver", "undo-2", "Recibir un libro que vuelve", [
+        "En el <strong>Mostrador</strong>, tocá <strong>Devolver</strong>.",
+        "Escribí el código, el título o el nombre del alumno, y tocá el libro en la lista. Con el lector: escaneá y listo.",
+        "¿Te equivocaste de libro? Tocá <strong>Deshacer</strong> en el aviso que aparece abajo.",
+      ], ["#/mostrador", "Ir al Mostrador"])}
+      ${card("atrasados", "calendar-clock", "Reclamar los atrasados", [
+        "La pestaña <strong>Atrasados</strong> tiene los libros que ya tendrían que haber vuelto, los más viejos primero. El número rojo de arriba dice cuántos son.",
+        "<strong>Imprimir lista</strong> te da la hoja para llevar a las clases.",
+        `<strong>Renovar</strong> le da ${plural(days, "día", "días")} más, contando desde hoy.`,
+      ], ["#/atrasados", "Ver atrasados"])}
+      ${card("preguntar", "search", "Preguntar quién tiene qué", [
+        "En la caja <strong>Preguntá</strong> del Mostrador, escribí un libro, un alumno, una clase o un código: «Matilda», «Martina», «4°B».",
+        "O tocá una pregunta rápida: <strong>Atrasados</strong>, <strong>Prestados hoy</strong>, <strong>Más leídos</strong>.",
+      ])}
+      ${card("cargar", "plus", "Agregar alumnos y libros", [
+        "De a uno: en <strong>Libros</strong> o <strong>Alumnos</strong>, con el botón amarillo de arriba.",
+        "Todos juntos: en <strong>Ajustes</strong>, elegí la planilla de Excel desde Archivos (o pegá las filas) y tocá <strong>Cargar alumnos</strong> o <strong>Cargar libros</strong>.",
+        "Nada se borra: un alumno que se fue se <strong>archiva</strong> desde su página. Si se rompe un ejemplar, en la página del libro tocá <strong>Dar de baja</strong> en su fila. Antes tienen que devolver lo que tengan prestado, y el historial queda.",
+      ], ["#/ajustes", "Ir a Ajustes"])}
+      ${card("copia", "download", "Guardar una copia de seguridad", [
+        "Todo está guardado solo en este iPad. Una vez por semana, tocá <strong>Ajustes → Guardar copia de seguridad</strong>. El archivo queda en la app Archivos: mandátelo por mail o a Drive, así no se pierde si le pasa algo al iPad.",
+        "La app te avisa en el Mostrador cuando pasó una semana sin copia (mientras haya datos de ejemplo no avisa).",
+        "Si un día cambiás de iPad: en el nuevo, <strong>Ajustes → Recuperar una copia</strong>.",
+      ], ["#/ajustes", "Ir a Ajustes"])}
+      ${card("probar", "sparkles", "Probar sin miedo", [
+        "En <strong>Ajustes</strong> podés cargar <strong>datos de ejemplo</strong>: libros, alumnos y préstamos inventados para practicar.",
+        "Cuando termines, <strong>Borrar datos de ejemplo</strong> quita los libros y alumnos de ejemplo, con todos sus préstamos. Tus libros y alumnos quedan. Borralos antes de empezar a prestar en serio.",
+      ])}
+    </div>`;
+}
+
 // demo strip + ajustes share this
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-action=clear-demo]");
   if (!b) return;
   try {
     await api("DELETE", "/api/demo");
-    toast("Borré los datos de ejemplo. Lo que cargaste vos sigue ahí.");
+    toast("Borré los datos de ejemplo. Tus libros y alumnos siguen ahí.");
     route();
   } catch (err) { fail(err); }
 });
@@ -1026,7 +1078,7 @@ async function route() {
   const params = new URLSearchParams(query);
   const parts = path.split("/").filter(Boolean);
   const section = parts[0] || "mostrador";
-  $$(".tabs a").forEach((a) => {
+  $$(".tabs a, .help-link").forEach((a) => {
     if (a.dataset.tab === section) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   });
@@ -1037,6 +1089,7 @@ async function route() {
     else if (section === "alumnos" && parts[1]) await viewAlumno(parts[1]);
     else if (section === "alumnos") await viewAlumnos(params);
     else if (section === "ajustes") await viewAjustes();
+    else if (section === "ayuda") await viewAyuda();
     else await viewMostrador(params);
   } catch (err) {
     main.innerHTML = `<div class="empty-state"><h3>No pude abrir esta página</h3><p>${esc(err.message)}</p><a class="btn btn-line" href="#/mostrador">Volver al mostrador</a></div>`;

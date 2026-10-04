@@ -42,6 +42,7 @@ There are no PRs (solo project committed to `main`), so verdicts are recorded he
 | 2026-10-03 | iPad port (static PWA, IndexedDB, offline) | unit 25, e2e 63/63 in WebKit at iPad sizes | No fresh independent run. Live site smoke-tested on an emulated iPad, including offline. |
 | 2026-10-03 | Excel .xlsx import; loan import; .xlsx downloads | unit 44 (planted bugs caught), e2e 68/68; files opened in Microsoft Excel | No fresh independent run. A re-import duplicate bug was caught by our own test and fixed. |
 | 2026-10-04 | Coalesced saves (found while building Mis clases) | unit 44, e2e 68/68 | Covered by the Mis clases verifier's save probe (300 rapid writes survive a reload). |
+| 2026-10-04 | "Cómo se usa" help screen (`#/ayuda`, "?" in the band), next-step hints in empty histories | unit 44, e2e 79/79 (new checks mutated red, then reverted) | Verifier **PASS+NOTES**: two help steps over-promised (clearing demo data also removes real loans of demo books; a broken copy is "Dar de baja", not archive) → reworded, along with the same promise in Ajustes and its toast. |
 
 ## 8. Open items
 

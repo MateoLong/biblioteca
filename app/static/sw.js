@@ -1,6 +1,6 @@
 // Keeps a copy of the app on the iPad so it opens without internet.
 // Bump VERSION whenever any file below changes, so the iPad picks up the new version.
-const VERSION = "biblioteca-v4";
+const VERSION = "biblioteca-v5";
 const FILES = [
   "./", "index.html", "styles.css", "app.js", "local-api.js", "registry.js", "demo-data.js", "xlsx.js",
   "icons.svg", "favicon.svg", "manifest.webmanifest", "apple-touch-icon.png", "icon-192.png", "icon-512.png",

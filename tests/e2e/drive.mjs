@@ -76,6 +76,7 @@ try {
   // ── F1 first run → demo data, survives a reload ──
   await go("mostrador");
   check("first-run", "empty library shows the welcome state", await page.isVisible("[data-testid=first-run]"));
+  check("help", "welcome state points to Cómo se usa", await page.isVisible("[data-testid=first-run] a[href='#/ayuda']"));
   await shot("01-first-run");
   await page.tap("[data-action=load-demo]");
   await page.waitForSelector("[data-testid=demo-strip]:not([hidden])");
@@ -88,6 +89,20 @@ try {
   await page.waitForSelector("[data-testid=loan-tile]");
   check("persistence", "after closing and reopening, the 9 loans are still there", (await page.$$("[data-testid=loan-tile]")).length === 9);
   await shot("02-mostrador-ipad");
+
+  // ── F1b help: the "?" opens Cómo se usa, reads only, and its links lead back to the screens ──
+  const beforeHelp = JSON.stringify(await saved());
+  await page.tap("[data-testid=help-link]");
+  await page.waitForSelector("[data-testid=help-prestar]");
+  const cards = await page.$$eval("[data-testid^=help-]:not([data-testid=help-link])", (els) => els.map((e) => e.dataset.testid.slice(5)));
+  check("help", "'?' opens the 7 help cards", cards.join(",") === "prestar,devolver,atrasados,preguntar,cargar,copia,probar", cards.join(","));
+  check("help", "the '?' is marked as the current page", (await page.getAttribute("[data-testid=help-link]", "aria-current")) === "page");
+  check("help", "loan length in the steps comes from Ajustes (14 días)", (await page.textContent("[data-testid=help-prestar]")).includes("14 días"));
+  await shot("02b-ayuda");
+  await page.tap("[data-testid=help-prestar] a[href='#/mostrador']");
+  await page.waitForSelector("[data-testid=lend-submit]");
+  check("help", "'Ir al Mostrador' lands on the counter", page.url().endsWith("#/mostrador"), page.url());
+  check("help", "reading the help writes nothing to the device", JSON.stringify(await saved()) === beforeHelp);
 
   // ── F2 lend: tap a suggestion with a finger, Enter for the book ──
   await page.fill("[data-testid=lend-student]", "agus");
@@ -194,6 +209,7 @@ try {
   readback.addBook = st.copies.filter((c) => c.book_id === corazon?.id).map((c) => c.code);
   check("add-book", "book saved with 2 numbered copies, not demo", corazon && !corazon.is_demo && readback.addBook.length === 2 && readback.addBook.every((c) => /^B-\d{4}$/.test(c)), JSON.stringify(readback.addBook));
   await shot("08-libro-nuevo");
+  check("hints", "a book nobody took yet says where to lend it", (await page.textContent("[data-testid=history-empty]")).includes("Se presta desde el Mostrador"));
 
   // ── F8 add a student; import by pasting rows (the iPad way) and by file ──
   await go("alumnos");
@@ -202,6 +218,9 @@ try {
   await page.fill("[data-testid=student-grade]", "5a");
   await page.tap("[data-testid=student-save]");
   await page.waitForFunction(() => document.body.textContent.includes("Ana Gómez"));
+  await go(`alumnos/${studentNamed(await saved(), "Ana Gómez").id}`);
+  check("hints", "a student with no loans is pointed to the yellow 'Prestarle un libro' above",
+    (await page.textContent("[data-testid=history-empty]")).includes("botón amarillo de arriba") && await page.isVisible("a.btn-go[href^='#/mostrador?alumno=']"));
   await go("ajustes");
   await page.fill("[data-testid=import-students-paste]", "Pedro Ruiz\t1°A\nLola Vega\t1°A\nAna Gómez\t5°A");
   await page.tap("#import-students button[type=submit]");
@@ -321,7 +340,7 @@ try {
   await demoCtx.page.tap("[data-action=load-demo]");
   await demoCtx.page.waitForSelector("[data-testid=loan-tile]");
   const ds = await saved(demoCtx.page);
-  const routes = ["mostrador", "atrasados", "libros", `libros/${bookTitled(ds, "Matilda").id}`, "alumnos", `alumnos/${studentNamed(ds, "Martina López").id}`, "ajustes"];
+  const routes = ["mostrador", "atrasados", "libros", `libros/${bookTitled(ds, "Matilda").id}`, "alumnos", `alumnos/${studentNamed(ds, "Martina López").id}`, "ajustes", "ayuda"];
   for (const width of [820, 744]) {
     await demoCtx.page.setViewportSize({ width, height: 1180 });
     for (const r of routes) {
@@ -331,7 +350,7 @@ try {
       if (width === 820) await shot(`p-${r.replace("/", "-")}`, true, demoCtx.page);
     }
   }
-  for (const r of ["mostrador", "atrasados", "libros", "alumnos", "ajustes"]) {
+  for (const r of ["mostrador", "atrasados", "libros", "alumnos", "ajustes", "ayuda"]) {
     await go(r);
     const sw = await page.evaluate(() => document.documentElement.scrollWidth);
     check("layout", `#/${r} fits 1180px landscape`, sw <= 1180, `scrollWidth ${sw}`);
