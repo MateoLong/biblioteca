@@ -47,6 +47,21 @@ function fmtRel(iso) {
   if (n === -1) return "ayer";
   return fmtDay(iso);
 }
+const fmtDM = (iso) => { const [, m, d] = iso.split("-"); return `${d}/${m}`; };
+const WEEKDAYS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const weekday = (iso) => WEEKDAYS[new Date(`${iso}T12:00:00`).getDay()];
+// "17/10", "17-10", "17/10/2027" -> ISO. Without a year, a date already past means next year.
+function parseDM(text) {
+  const m = String(text).trim().match(/^(\d{1,2})\s*[\/\-.]\s*(\d{1,2})(?:\s*[\/\-.]\s*(\d{2}|\d{4}))?$/);
+  if (!m) return null;
+  const d = Number(m[1]), mo = Number(m[2]);
+  let y = m[3] ? Number(m[3].length === 2 ? "20" + m[3] : m[3]) : Number(TODAY.slice(0, 4));
+  const iso = (yy) => `${yy}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const ok = (s) => { const t = new Date(`${s}T12:00:00`); return t.getDate() === d && t.getMonth() + 1 === mo; };
+  if (!ok(iso(y))) return null;
+  if (!m[3] && iso(y) < TODAY) y += 1;
+  return iso(y);
+}
 const addDays = (iso, n) => new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
 
 // Each book keeps the same forro colour and print everywhere.
@@ -276,32 +291,33 @@ function renderCounter() {
   if (desk.mode === "lend") {
     const due = addDays(TODAY, summary.settings.loan_days);
     body.innerHTML = `
-      <form id="lend-form" class="lend-grid" novalidate>
-        <div class="field combo">
-          <span id="l-student-label">Alumno</span>
-          <div id="student-slot"></div>
+      <form id="lend-form" class="label-form forro" data-print="stars" style="--c: var(--f-cobalto)" novalidate>
+        <div class="etiqueta etiqueta-form" style="--c: var(--f-girasol)">
+          <div class="label-row combo"><span class="label-key" id="l-student-label">Nombre</span><div id="student-slot"></div></div>
+          <div class="label-row combo"><span class="label-key" id="l-book-label">Libro</span><div id="copy-slot"></div></div>
+          <div class="label-row"><label class="label-key" for="l-due">Vuelve</label>
+            <div class="due-line">
+              <input class="line-input hand due-input" id="l-due" value="${fmtDM(due)}" inputmode="numeric" autocomplete="off" aria-describedby="l-due-day" data-testid="lend-due">
+              <span class="due-day" id="l-due-day">${weekday(due)}</span>
+              <span class="chips due-chips" aria-label="Plazos rápidos">${[7, 14, 21].map((d) => `<button type="button" class="chip chip-sm" data-days="${d}" aria-pressed="${d === summary.settings.loan_days}">${d / 7} ${d === 7 ? "semana" : "semanas"}</button>`).join("")}</span>
+            </div>
+          </div>
         </div>
-        <div class="field combo">
-          <span id="l-book-label">Libro</span>
-          <div id="copy-slot"></div>
-        </div>
-        <div class="lend-actions span-2">
-          <label class="field"><span>Vuelve el</span>
-            <input class="input" type="date" id="l-due" value="${due}" min="${TODAY}" data-testid="lend-due">
-          </label>
-          <button class="btn btn-go btn-big" type="submit" data-testid="lend-submit">${icon("check")}Prestar</button>
-        </div>
-        <div id="lend-notice" class="span-2"></div>
-      </form>`;
+        <button class="btn btn-go btn-big" type="submit" data-testid="lend-submit">${icon("check")}Prestar</button>
+      </form>
+      <div id="lend-notice"></div>`;
     paintStudentSlot();
     paintCopySlot();
+    wireDueLine($("#l-due"), $("#l-due-day"), $$(".due-chips .chip"));
     $("#lend-form").addEventListener("submit", (e) => { e.preventDefault(); doLend(false); });
   } else {
     body.innerHTML = `
-      <div class="field combo">
-        <label for="r-q"><span class="field-label" style="font-family:var(--font-ui);font-weight:600">Código, título o nombre del alumno</span></label>
-        <input class="input" id="r-q" placeholder="B-0012 · Matilda · Martina" data-testid="return-input">
-        <small class="muted">Elegí el libro de la lista o escaneá el código y apretá Enter.</small>
+      <div class="label-form forro" data-print="stars" style="--c: var(--f-cobalto)">
+        <div class="etiqueta etiqueta-form" style="--c: var(--f-girasol)">
+          <div class="label-row combo"><label class="label-key" for="r-q">Libro</label>
+            <input class="line-input hand" id="r-q" placeholder="código, título o alumno" data-testid="return-input"></div>
+          <p class="label-help">Elegí el libro de la lista, o escaneá el código y apretá Enter.</p>
+        </div>
       </div>
       <div id="return-notice"></div>`;
     combobox($("#r-q"), {
@@ -316,24 +332,39 @@ function renderCounter() {
   }
 }
 
+// The "Vuelve" line: typed as dd/mm, with quick 1/2/3-week picks and the weekday spelled out.
+function wireDueLine(input, dayEl, chips) {
+  const sync = () => {
+    const iso = parseDM(input.value);
+    dayEl.textContent = iso ? weekday(iso) : "escribila como 17/10";
+    input.setAttribute("aria-invalid", String(!iso));
+    chips.forEach((c) => c.setAttribute("aria-pressed", String(iso === addDays(TODAY, Number(c.dataset.days)))));
+  };
+  input.addEventListener("input", sync);
+  chips.forEach((c) => c.addEventListener("click", () => { input.value = fmtDM(addDays(TODAY, Number(c.dataset.days))); sync(); }));
+}
+
+function clearLastResult() { const r = $("#counter-result"); if (r) r.innerHTML = ""; }
+
 function paintStudentSlot() {
   const slot = $("#student-slot");
   if (desk.student) {
     const s = desk.student;
     const n = s.loans ? s.loans.length : s.open_loans;
-    slot.innerHTML = `<div class="picked" data-testid="picked-student">
-      <span><strong>${esc(s.name)}</strong> <span class="muted">${esc(s.grade || "")}${n ? ` · tiene ${plural(n, "libro", "libros")}` : ""}</span></span>
+    slot.innerHTML = `<div class="picked-line" data-testid="picked-student">
+      <span class="hand picked-hand">${esc(s.name)}</span>
+      <span class="picked-meta">${esc(s.grade || "")}${n ? ` · tiene ${plural(n, "libro", "libros")}` : ""}</span>
       <button type="button" class="btn btn-quiet btn-sm" aria-label="Cambiar alumno">${icon("x")}</button></div>`;
     $("button", slot).addEventListener("click", () => { desk.student = null; paintStudentSlot(); $("#l-student").focus(); });
     return;
   }
-  slot.innerHTML = `<input class="input" id="l-student" placeholder="Nombre o clase" aria-labelledby="l-student-label" data-testid="lend-student">`;
+  slot.innerHTML = `<input class="line-input hand" id="l-student" placeholder="nombre o clase" aria-labelledby="l-student-label" data-testid="lend-student">`;
   combobox($("#l-student"), {
     fetcher: (q) => api("GET", `/api/suggest/students?q=${encodeURIComponent(q)}`),
     render: (s) => `<span class="avatar" style="${studentColor(s.id)};width:30px;height:30px;font-size:.8rem">${esc(initials(s.name))}</span>
       <span><span class="opt-main">${esc(s.name)}</span><br><span class="opt-sub">${esc(s.grade || "sin clase")}${s.open_loans ? ` · tiene ${plural(s.open_loans, "libro", "libros")}` : ""}${s.overdue ? " · con atraso" : ""}</span></span>`,
     emptyText: (q) => `No hay ningún alumno «${q}». Agregalo en Alumnos.`,
-    onPick: (s) => { desk.student = s; paintStudentSlot(); (desk.copy ? $("[data-testid=lend-submit]") : $("#l-copy"))?.focus(); },
+    onPick: (s) => { desk.student = s; clearLastResult(); paintStudentSlot(); (desk.copy ? $("[data-testid=lend-submit]") : $("#l-copy"))?.focus(); },
   });
 }
 
@@ -341,20 +372,21 @@ function paintCopySlot() {
   const slot = $("#copy-slot");
   if (desk.copy) {
     const c = desk.copy;
-    slot.innerHTML = `<div class="picked" data-testid="picked-copy">
-      <span class="forro swatch" ${forroAttrs(c.book_id)} style="width:22px;height:30px;${forro(c.book_id).style}"></span>
-      <span><strong>${esc(c.title)}</strong> <span class="code">${esc(c.code)}</span></span>
+    slot.innerHTML = `<div class="picked-line" data-testid="picked-copy">
+      <span class="forro swatch" ${forroAttrs(c.book_id)}></span>
+      <span class="hand picked-hand">${esc(c.title)}</span>
+      <span class="picked-meta">${esc(c.code)}</span>
       <button type="button" class="btn btn-quiet btn-sm" aria-label="Cambiar libro">${icon("x")}</button></div>`;
     $("button", slot).addEventListener("click", () => { desk.copy = null; paintCopySlot(); $("#l-copy").focus(); });
     return;
   }
-  slot.innerHTML = `<input class="input" id="l-copy" placeholder="Título o código" aria-labelledby="l-book-label" data-testid="lend-book">`;
+  slot.innerHTML = `<input class="line-input hand" id="l-copy" placeholder="título o código" aria-labelledby="l-book-label" data-testid="lend-book">`;
   combobox($("#l-copy"), {
     fetcher: (q) => api("GET", `/api/suggest/copies?mode=lend&q=${encodeURIComponent(q)}`),
     render: (c) => `<span class="forro swatch" ${forroAttrs(c.book_id)}></span>
       <span><span class="opt-main">${esc(c.title)}</span> <span class="code">${esc(c.code)}</span><br><span class="opt-sub">${esc(c.author || "")}</span></span>`,
     emptyText: (q) => `No hay ejemplares disponibles de «${q}».`,
-    onPick: (c) => { desk.copy = c; paintCopySlot(); (desk.student ? $("[data-testid=lend-submit]") : $("#l-student"))?.focus(); },
+    onPick: (c) => { desk.copy = c; clearLastResult(); paintCopySlot(); (desk.student ? $("[data-testid=lend-submit]") : $("#l-student"))?.focus(); },
   });
 }
 
@@ -366,10 +398,16 @@ async function doLend(force) {
     (!desk.student ? $("#l-student") : $("#l-copy"))?.focus();
     return;
   }
+  const dueOn = parseDM($("#l-due").value);
+  if (!dueOn) {
+    notice.innerHTML = `<div class="notice notice-error" role="alert">No entendí la fecha de vuelta. Escribila como 17/10.</div>`;
+    $("#l-due").focus();
+    return;
+  }
   const btn = $("[data-testid=lend-submit]");
   btn.classList.add("is-busy");
   try {
-    const loan = await api("POST", "/api/loans", { code: desk.copy.code, student_id: desk.student.id, due_on: $("#l-due").value, force });
+    const loan = await api("POST", "/api/loans", { code: desk.copy.code, student_id: desk.student.id, due_on: dueOn, force });
     desk.student = null; desk.copy = null;
     renderCounter();
     showLent(loan);
@@ -550,8 +588,10 @@ function wireLoanActions(root = main) {
     } catch (err) { fail(err); }
   }));
   $$("[data-due]", root).forEach((inp) => inp.addEventListener("change", async () => {
+    const dueOn = parseDM(inp.value);
+    if (!dueOn) { inp.setAttribute("aria-invalid", "true"); toast("No entendí la fecha. Escribila como 17/10.", { error: true }); return; }
     try {
-      const loan = await api("PATCH", `/api/loans/${inp.dataset.due}`, { due_on: inp.value });
+      const loan = await api("PATCH", `/api/loans/${inp.dataset.due}`, { due_on: dueOn });
       toast(`Nueva fecha para ${loan.title}: ${fmtDay(loan.due_on)}.`);
       route();
     } catch (err) { fail(err); }
@@ -768,7 +808,7 @@ async function viewAlumno(id) {
         ${s.loans.map((l) => `<tr class="${l.overdue ? "is-late" : ""}">
           <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l.book_id)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span>${l.overdue ? ` <span class="late-days">· ${plural(l.days_late, "día", "días")} de atraso</span>` : ""}</span></div></td>
           <td data-label="Prestado">${fmtDay(l.lent_on)}</td>
-          <td data-label="Vuelve"><input type="date" class="input input-date" value="${l.due_on}" min="${l.lent_on}" data-due="${l.id}" aria-label="Fecha de devolución de ${esc(l.title)}"></td>
+          <td data-label="Vuelve"><input class="line-input hand due-edit" value="${fmtDM(l.due_on)}" inputmode="numeric" data-due="${l.id}" aria-label="Fecha de vuelta de ${esc(l.title)}, día y mes"></td>
           <td class="actions"><button type="button" class="btn btn-quiet btn-sm" data-renew="${l.id}">${icon("rotate-cw")}Renovar</button>
             <button type="button" class="btn btn-line btn-sm" data-return="${esc(l.code)}">Devolver</button></td>
         </tr>`).join("")}</tbody></table></div>` : `<p class="muted">No tiene libros prestados.</p>`}

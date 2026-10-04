@@ -100,6 +100,11 @@ try {
   const lentCode = readback.lend[0]?.code;
   check("lend", "focus is back on the student field for the next child", await page.evaluate(() => document.activeElement?.dataset.testid === "lend-student"));
 
+  check("lend", "the Vuelve line shows dd/mm and its weekday", (await page.inputValue("[data-testid=lend-due]")) === "17/10" && (await page.textContent("#l-due-day")) === "sábado", await page.inputValue("[data-testid=lend-due]"));
+  await page.click(".due-chips .chip[data-days='7']");
+  check("lend", "'1 semana' chip sets 10/10", (await page.inputValue("[data-testid=lend-due]")) === "10/10");
+  await page.click(".due-chips .chip[data-days='14']");
+
   // ── F3 limit warns, override works ──
   for (const book of ["matilda", "mafalda"]) {
     await page.fill("[data-testid=lend-student]", "agustina");
@@ -207,9 +212,10 @@ try {
   const martina = sql("SELECT id FROM students WHERE name='Martina López'")[0].id;
   await go(`alumnos/${martina}`);
   await page.waitForSelector("[data-testid=student-loans]");
-  const dueInput = page.locator("[data-testid=student-loans] input[type=date]").first();
+  const dueInput = page.locator("[data-testid=student-loans] input[data-due]").first();
   const loanId = await dueInput.getAttribute("data-due");
-  await dueInput.fill("2026-10-30");
+  check("due-date", "due dates read as dd/mm", /^\d{2}\/\d{2}$/.test(await dueInput.inputValue()), await dueInput.inputValue());
+  await dueInput.fill("30/10");
   await dueInput.dispatchEvent("change");
   await page.waitForTimeout(500);
   readback.setDue = sql(`SELECT due_on FROM loans WHERE id=${loanId}`)[0];
