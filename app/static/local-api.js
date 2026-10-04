@@ -35,7 +35,8 @@ function writeState(db, state) {
 
 let db = null;
 let registry = null;
-let saving = Promise.resolve();
+let latest = null;   // newest state not yet written
+let writing = null;  // the running write loop, if any
 let onSaveError = () => {};
 
 // Tests pin the date with window.BIBLIO_TODAY; she always gets the iPad's own date.
@@ -52,21 +53,30 @@ export async function start({ saveError } = {}) {
   // If the app was open in two places, pick up the newer copy when coming back.
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState !== "visible") return;
-    const latest = await readState(db).catch(() => null);
-    if (latest && (latest.rev || 0) > (registry.state.rev || 0)) registry.state = latest;
+    const stored = await readState(db).catch(() => null);
+    if (stored && (stored.rev || 0) > (registry.state.rev || 0)) registry.state = stored;
   });
-  globalThis.__biblio = { state: () => registry.state, saved: () => saving.then(() => readState(db)) };
+  globalThis.__biblio = { state: () => registry.state, saved: () => flushed().then(() => readState(db)) };
   return registry;
 }
 
+// Saves are coalesced: while one write runs, later changes only mark the newest state,
+// which is written next. A big import costs a couple of writes, not one per row.
 function persist(state) {
   state.rev = (state.rev || 0) + 1;
-  const snapshot = structuredClone(state);
-  saving = saving.then(() => writeState(db, snapshot)).catch((err) => onSaveError(err));
+  latest = state;
+  writing ??= (async () => {
+    while (latest) {
+      const snapshot = structuredClone(latest);
+      latest = null;
+      try { await writeState(db, snapshot); } catch (err) { onSaveError(err); }
+    }
+    writing = null;
+  })();
 }
 
 /** Resolves once every change so far is written to the device. */
-export const flushed = () => saving;
+export const flushed = async () => { while (writing) await writing; };
 
 // ── routes ─────────────────────────────────────────────────────────────
 const ROUTES = [
