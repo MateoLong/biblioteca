@@ -1,0 +1,708 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-04T00:09:12+00:00",
+  "title": "Design System: Biblioteca",
+  "extensions": {
+    "colorMeta": {
+      "moña": {
+        "role": "primary",
+        "displayName": "Moña Blue",
+        "canonical": "#2347b5",
+        "oklch": "oklch(44.5% 0.179 265.5)",
+        "tonalRamp": [
+          "#010037",
+          "#0a1d57",
+          "#112f9c",
+          "#2c52c1",
+          "#4974e6",
+          "#719afc",
+          "#aac4fc",
+          "#e7effe"
+        ]
+      },
+      "moña-deep": {
+        "role": "primary",
+        "displayName": "Moña Deep",
+        "canonical": "#172f7a",
+        "oklch": "oklch(33.8% 0.131 265.9)",
+        "tonalRamp": [
+          "#01052b",
+          "#12214a",
+          "#1e3884",
+          "#3a58a7",
+          "#5879cb",
+          "#789bf0",
+          "#aac3fd",
+          "#e7effe"
+        ]
+      },
+      "moña-soft": {
+        "role": "primary",
+        "displayName": "Moña Soft",
+        "canonical": "#dfe7fb",
+        "oklch": "oklch(92.8% 0.028 268.4)",
+        "tonalRamp": [
+          "#080b12",
+          "#20242d",
+          "#393f4f",
+          "#575d6e",
+          "#767d8f",
+          "#979eb1",
+          "#bcc4d7",
+          "#e9eefa"
+        ]
+      },
+      "girasol": {
+        "role": "secondary",
+        "displayName": "Girasol",
+        "canonical": "#ffc53d",
+        "oklch": "oklch(85.4% 0.157 84.1)",
+        "tonalRamp": [
+          "#140900",
+          "#312100",
+          "#523c03",
+          "#775808",
+          "#9d771a",
+          "#c59625",
+          "#f4ba2d",
+          "#feedca"
+        ]
+      },
+      "girasol-hover": {
+        "role": "secondary",
+        "displayName": "Girasol Hover",
+        "canonical": "#ffb81a",
+        "oklch": "oklch(82.8% 0.167 79.7)",
+        "tonalRamp": [
+          "#150800",
+          "#322000",
+          "#543b06",
+          "#795710",
+          "#a2740a",
+          "#cc9312",
+          "#fcb613",
+          "#feecce"
+        ]
+      },
+      "girasol-soft": {
+        "role": "secondary",
+        "displayName": "Girasol Soft",
+        "canonical": "#fff4d6",
+        "oklch": "oklch(96.8% 0.041 90.2)",
+        "tonalRamp": [
+          "#0f0b02",
+          "#292416",
+          "#483f26",
+          "#665d43",
+          "#877d62",
+          "#a89e82",
+          "#cec4a7",
+          "#f5eedc"
+        ]
+      },
+      "tomate": {
+        "role": "state",
+        "displayName": "Tomate",
+        "canonical": "#e2483d",
+        "oklch": "oklch(61.8% 0.192 28.1)",
+        "tonalRamp": [
+          "#210000",
+          "#4b0001",
+          "#7c0205",
+          "#b1090d",
+          "#d83e34",
+          "#f96b5d",
+          "#feaca0",
+          "#fee9e6"
+        ]
+      },
+      "tomate-ink": {
+        "role": "state",
+        "displayName": "Tomate Ink",
+        "canonical": "#a8241b",
+        "oklch": "oklch(47.9% 0.169 29.1)",
+        "tonalRamp": [
+          "#220000",
+          "#4a0302",
+          "#7a0b07",
+          "#a8241b",
+          "#cf4b3d",
+          "#f66e5e",
+          "#fbada1",
+          "#ffe9e5"
+        ]
+      },
+      "tomate-soft": {
+        "role": "state",
+        "displayName": "Tomate Soft",
+        "canonical": "#fde8e5",
+        "oklch": "oklch(94.7% 0.023 27.3)",
+        "tonalRamp": [
+          "#110908",
+          "#2b2220",
+          "#4b3b39",
+          "#6a5956",
+          "#8b7876",
+          "#ad9997",
+          "#d3bfbc",
+          "#f8ebe9"
+        ]
+      },
+      "pasto": {
+        "role": "state",
+        "displayName": "Pasto",
+        "canonical": "#2f9e5b",
+        "oklch": "oklch(62.1% 0.141 152.6)",
+        "tonalRamp": [
+          "#001102",
+          "#012d13",
+          "#054d26",
+          "#0e703b",
+          "#219452",
+          "#4db772",
+          "#75de97",
+          "#c8fed6"
+        ]
+      },
+      "pasto-ink": {
+        "role": "state",
+        "displayName": "Pasto Ink",
+        "canonical": "#1c6f3e",
+        "oklch": "oklch(48.0% 0.110 152.8)",
+        "tonalRamp": [
+          "#001003",
+          "#012d13",
+          "#044d26",
+          "#1c6f3e",
+          "#42905d",
+          "#65b27d",
+          "#8ad9a2",
+          "#cefcda"
+        ]
+      },
+      "pasto-soft": {
+        "role": "state",
+        "displayName": "Pasto Soft",
+        "canonical": "#e2f4e8",
+        "oklch": "oklch(95.1% 0.025 156.7)",
+        "tonalRamp": [
+          "#060d09",
+          "#1e2621",
+          "#35443a",
+          "#536258",
+          "#728277",
+          "#93a398",
+          "#b8c9be",
+          "#e7f2ea"
+        ]
+      },
+      "f-cobalto": {
+        "role": "tertiary",
+        "displayName": "Forro Cobalto",
+        "canonical": "#2f5bd3",
+        "oklch": "oklch(51.4% 0.192 265.0)",
+        "tonalRamp": [
+          "#01003a",
+          "#081c5a",
+          "#0c2ca2",
+          "#2650c7",
+          "#4373ed",
+          "#709afb",
+          "#aac4fb",
+          "#e7efff"
+        ]
+      },
+      "f-tomate": {
+        "role": "tertiary",
+        "displayName": "Forro Tomate",
+        "canonical": "#d23f2d",
+        "oklch": "oklch(58.0% 0.187 30.5)",
+        "tonalRamp": [
+          "#220000",
+          "#4d0000",
+          "#7b0901",
+          "#ae1504",
+          "#d54230",
+          "#fd6752",
+          "#fcad9f",
+          "#ffe9e5"
+        ]
+      },
+      "f-girasol": {
+        "role": "tertiary",
+        "displayName": "Forro Girasol",
+        "canonical": "#f4b400",
+        "oklch": "oklch(80.8% 0.166 82.7)",
+        "tonalRamp": [
+          "#140900",
+          "#312100",
+          "#523b06",
+          "#77580f",
+          "#a07509",
+          "#c99511",
+          "#f8b812",
+          "#feeccb"
+        ]
+      },
+      "f-pasto": {
+        "role": "tertiary",
+        "displayName": "Forro Pasto",
+        "canonical": "#21804a",
+        "oklch": "oklch(53.2% 0.121 153.6)",
+        "tonalRamp": [
+          "#001003",
+          "#002d14",
+          "#004d27",
+          "#03703c",
+          "#37925a",
+          "#5bb47b",
+          "#82db9f",
+          "#cafdd8"
+        ]
+      },
+      "f-violeta": {
+        "role": "tertiary",
+        "displayName": "Forro Violeta",
+        "canonical": "#6a4bc8",
+        "oklch": "oklch(51.5% 0.185 289.7)",
+        "tonalRamp": [
+          "#0e002f",
+          "#261354",
+          "#451998",
+          "#6140bc",
+          "#7f63e1",
+          "#9e8bf8",
+          "#c2bafe",
+          "#eeecff"
+        ]
+      },
+      "f-turquesa": {
+        "role": "tertiary",
+        "displayName": "Forro Turquesa",
+        "canonical": "#0b7e82",
+        "oklch": "oklch(54.0% 0.090 198.8)",
+        "tonalRamp": [
+          "#000f10",
+          "#002a2c",
+          "#004a4c",
+          "#156a6e",
+          "#278d91",
+          "#50afb3",
+          "#78d6da",
+          "#c5fafc"
+        ]
+      },
+      "f-rosa": {
+        "role": "tertiary",
+        "displayName": "Forro Rosa",
+        "canonical": "#c23d7b",
+        "oklch": "oklch(56.9% 0.178 355.7)",
+        "tonalRamp": [
+          "#20000c",
+          "#470026",
+          "#760143",
+          "#a31c61",
+          "#c94481",
+          "#f068a3",
+          "#fca7c7",
+          "#fee8ef"
+        ]
+      },
+      "f-naranja": {
+        "role": "tertiary",
+        "displayName": "Forro Naranja",
+        "canonical": "#f08a24",
+        "oklch": "oklch(72.9% 0.162 58.8)",
+        "tonalRamp": [
+          "#1b0400",
+          "#3a1b00",
+          "#623100",
+          "#894c10",
+          "#b7650a",
+          "#e68112",
+          "#fcb176",
+          "#ffeadb"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Túnica Ground",
+        "canonical": "#f1f4fb",
+        "oklch": "oklch(96.7% 0.010 267.4)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#232427",
+          "#3d4045",
+          "#5b5e63",
+          "#7b7d83",
+          "#9c9ea5",
+          "#c1c4cb",
+          "#edeef3"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1b2340",
+        "oklch": "oklch(26.5% 0.055 270.6)",
+        "tonalRamp": [
+          "#060a19",
+          "#1e2334",
+          "#353e5d",
+          "#525c7d",
+          "#717c9f",
+          "#919dc2",
+          "#b6c3e9",
+          "#e9eefe"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "#47527a",
+        "oklch": "oklch(44.7% 0.067 271.7)",
+        "tonalRamp": [
+          "#06091c",
+          "#1d2338",
+          "#333d63",
+          "#505b84",
+          "#6f7ba6",
+          "#8f9cc9",
+          "#b4c2f1",
+          "#e9eefe"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line",
+        "canonical": "#d6ddee",
+        "oklch": "oklch(89.7% 0.024 267.9)",
+        "tonalRamp": [
+          "#080b11",
+          "#21242b",
+          "#3a404d",
+          "#585d6c",
+          "#777d8c",
+          "#989eae",
+          "#bdc4d5",
+          "#eaeef9"
+        ]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Line Strong",
+        "canonical": "#b9c4e0",
+        "oklch": "oklch(82.1% 0.041 268.5)",
+        "tonalRamp": [
+          "#070b16",
+          "#1f2430",
+          "#363f56",
+          "#545d75",
+          "#737d97",
+          "#939eb9",
+          "#b9c4e0",
+          "#e8eefe"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page titles (h1)."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section titles (h2)."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Book titles on forro tiles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Data and sentences, tabular numerals."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Buttons, tabs, chips, field names, table headers."
+      },
+      "hand": {
+        "displayName": "Hand",
+        "purpose": "What is written on an etiqueta: name, grade, due date."
+      },
+      "hand-input": {
+        "displayName": "Hand (writing line)",
+        "purpose": "The lend form's handwritten fields and the due date being set."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow-1",
+        "value": "0 1px 2px rgba(23,47,122,.08), 0 2px 6px rgba(23,47,122,.06)",
+        "purpose": "Rest: panels, tables, forros, selected switch segment."
+      },
+      {
+        "name": "shadow-2",
+        "value": "0 2px 4px rgba(23,47,122,.08), 0 10px 24px rgba(23,47,122,.12)",
+        "purpose": "Lift: the lend form, hovered tiles, listboxes, toasts."
+      },
+      {
+        "name": "band",
+        "value": "0 2px 10px rgba(23,47,122,.25)",
+        "purpose": "The sticky top band only."
+      },
+      {
+        "name": "go-glow",
+        "value": "0 2px 6px rgba(201,138,0,.35)",
+        "purpose": "Warm glow under the Go button."
+      },
+      {
+        "name": "late-glow",
+        "value": "0 2px 6px rgba(168,36,27,.35)",
+        "purpose": "Under the overdue flag on tiles."
+      },
+      {
+        "name": "etiqueta-frame",
+        "value": "inset 0 0 0 3px var(--paper), inset 0 0 0 4.5px color-mix(in srgb, var(--c) 55%, white), 0 2px 6px rgba(23,47,122,.18)",
+        "purpose": "Draws the etiqueta's inner double frame in the forro colour, plus a soft drop."
+      },
+      {
+        "name": "focus-halo",
+        "value": "0 0 0 4px var(--moña-soft)",
+        "purpose": "Box input focus."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(.16,1,.3,1)",
+        "purpose": "All transitions and keyframes."
+      },
+      {
+        "name": "state",
+        "value": ".12s-.2s",
+        "purpose": "Hover, press and focus transitions."
+      },
+      {
+        "name": "tile-in",
+        "value": ".55s, from rotate(-5deg) translateY(10px)",
+        "purpose": "A just-lent tile dropping onto the desk."
+      },
+      {
+        "name": "label-on",
+        "value": ".5s, .2s delay, from translateY(16px) rotate(2deg)",
+        "purpose": "The etiqueta sliding onto the forro."
+      },
+      {
+        "name": "write",
+        "value": ".7s, .55s delay, steps(18), clip-path left-to-right",
+        "purpose": "The student's name writing itself onto the label."
+      },
+      {
+        "name": "toast-in",
+        "value": ".3s, from translateY(12px)",
+        "purpose": "Toast arrival."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "durations .01ms",
+        "purpose": "prefers-reduced-motion collapses all animation."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "desk-stack",
+        "value": "1080px"
+      },
+      {
+        "name": "compact",
+        "value": "860px"
+      },
+      {
+        "name": "etiqueta-stacked (container)",
+        "value": "190px"
+      }
+    ],
+    "prints": {
+      "cap": "rgba(255,255,255,.14)",
+      "variants": [
+        "dots",
+        "stripes",
+        "stars",
+        "checks",
+        "waves",
+        "plain"
+      ],
+      "source": "app/static/styles.css .forro[data-print]"
+    }
+  },
+  "components": [
+    {
+      "name": "Go Button",
+      "kind": "button",
+      "refersTo": "button-go",
+      "description": "The one sunflower action per context (Prestar).",
+      "html": "<button class=\"ds-btn ds-btn-go\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20 6 9 17l-5-5\"/></svg>Prestar</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 18px;border-radius:999px;border:2px solid transparent;font-family:var(--font-ui);font-weight:700;font-size:1.0625rem;line-height:1;cursor:pointer;transition:background-color .18s cubic-bezier(.16,1,.3,1),transform .12s cubic-bezier(.16,1,.3,1)} .ds-btn:active{transform:translateY(1px) scale(.98)} .ds-btn:focus-visible{outline:3px solid var(--moña);outline-offset:2px} .ds-btn-go{background:var(--girasol);color:var(--ink);box-shadow:0 2px 6px rgba(201,138,0,.35)} .ds-btn-go:hover{background:var(--girasol-hover)}"
+    },
+    {
+      "name": "Line Button",
+      "kind": "button",
+      "refersTo": "button-line",
+      "description": "Secondary actions: Devolver, Editar.",
+      "html": "<button class=\"ds-btn-line\">Devolver</button>",
+      "css": ".ds-btn-line{display:inline-flex;align-items:center;min-height:44px;padding:8px 18px;border-radius:999px;border:2px solid var(--line-strong);background:var(--paper);color:var(--ink);font-family:var(--font-ui);font-weight:700;font-size:1.0625rem;line-height:1;cursor:pointer;transition:border-color .18s cubic-bezier(.16,1,.3,1)} .ds-btn-line:hover{border-color:var(--moña);color:var(--moña-deep)} .ds-btn-line:focus-visible{outline:3px solid var(--moña);outline-offset:2px} .ds-btn-line:active{transform:translateY(1px) scale(.98)}"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Tertiary inline actions: Renovar.",
+      "html": "<button class=\"ds-btn-quiet\">Renovar</button>",
+      "css": ".ds-btn-quiet{display:inline-flex;align-items:center;min-height:36px;padding:6px 12px;border-radius:999px;border:2px solid transparent;background:transparent;color:var(--moña-deep);font-family:var(--font-ui);font-weight:700;font-size:.9375rem;line-height:1;cursor:pointer;transition:background-color .18s cubic-bezier(.16,1,.3,1)} .ds-btn-quiet:hover{background:var(--moña-soft)} .ds-btn-quiet:focus-visible{outline:3px solid var(--moña);outline-offset:2px}"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Box field with a Moña focus halo.",
+      "html": "<input class=\"ds-input\" placeholder=\"Libro, alumno, clase o código\">",
+      "css": ".ds-input{width:100%;min-height:48px;padding:10px 14px;border:2px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font-family:var(--font-body);font-size:1.0625rem;transition:border-color .15s cubic-bezier(.16,1,.3,1),box-shadow .15s cubic-bezier(.16,1,.3,1)} .ds-input::placeholder{color:#6b7596} .ds-input:hover{border-color:var(--line-strong)} .ds-input:focus{outline:none;border-color:var(--moña);box-shadow:0 0 0 4px var(--moña-soft)}"
+    },
+    {
+      "name": "Writing Line",
+      "kind": "input",
+      "refersTo": "line-input",
+      "description": "Handwritten field on the lend form's etiqueta.",
+      "html": "<input class=\"ds-line\" placeholder=\"nombre o clase\">",
+      "css": ".ds-line{width:100%;min-height:46px;padding:6px 4px 4px;border:0;border-bottom:2px dotted var(--line-strong);border-radius:4px 4px 0 0;background:transparent;color:var(--moña-deep);font-family:var(--font-hand);font-size:1.625rem;line-height:1.2;transition:background-color .15s cubic-bezier(.16,1,.3,1)} .ds-line::placeholder{color:#6b7596} .ds-line:hover{border-bottom-color:var(--ink-2)} .ds-line:focus{outline:none;border-bottom:2px solid var(--moña);background:var(--moña-soft)}"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Question shortcuts and week picks; pressed fills Moña.",
+      "html": "<span><button class=\"ds-chip\" aria-pressed=\"false\">1 semana</button> <button class=\"ds-chip\" aria-pressed=\"true\">2 semanas</button></span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;min-height:36px;padding:4px 14px;border-radius:999px;border:2px solid var(--line);background:var(--paper);color:var(--ink);font-family:var(--font-ui);font-weight:600;font-size:.9375rem;cursor:pointer;transition:border-color .15s cubic-bezier(.16,1,.3,1)} .ds-chip:hover{border-color:var(--moña)} .ds-chip:focus-visible{outline:3px solid var(--moña);outline-offset:2px} .ds-chip[aria-pressed=true]{background:var(--moña);border-color:var(--moña);color:#fff}"
+    },
+    {
+      "name": "Band Tabs",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "The cobalt forro band with pill tabs.",
+      "html": "<nav class=\"ds-band\"><a href=\"#\" aria-current=\"page\">Mostrador</a><a href=\"#\">Atrasados <span class=\"ds-count\">3</span></a><a href=\"#\">Libros</a></nav>",
+      "css": ".ds-band{display:flex;gap:4px;padding:10px 24px;background-color:var(--moña);background-image:var(--print-stars);box-shadow:0 2px 10px rgba(23,47,122,.25)} .ds-band a{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;color:#fff;text-decoration:none;font-family:var(--font-ui);font-weight:600;font-size:1.0625rem;line-height:1;transition:background-color .18s cubic-bezier(.16,1,.3,1)} .ds-band a:hover{background:rgba(255,255,255,.14)} .ds-band a:focus-visible{outline:3px solid var(--girasol);outline-offset:2px} .ds-band a[aria-current=page]{background:var(--paper);color:var(--moña-deep)} .ds-count{min-width:24px;height:24px;padding:0 7px;border-radius:999px;background:var(--tomate);color:#fff;font-size:.875rem;font-weight:700;display:inline-grid;place-items:center}"
+    },
+    {
+      "name": "Forro Loan Tile",
+      "kind": "card",
+      "refersTo": "loan-tile",
+      "description": "A book on loan: its forro with the etiqueta stuck on, frame in the forro colour.",
+      "html": "<a href=\"#\" class=\"ds-tile\" style=\"--c:var(--f-violeta)\"><span class=\"ds-flag\">2 días tarde</span><span class=\"ds-title\">Donde viven los monstruos</span><span class=\"ds-code\">B-0058</span><div class=\"ds-etiqueta\"><div><span>Nombre</span><b>Benjamín Castro</b></div><div><span>Grado</span><b>2°A</b></div><div><span>Vuelve</span><b class=\"late\">01/10</b></div></div></a>",
+      "css": ".ds-tile{position:relative;display:flex;flex-direction:column;width:220px;min-height:220px;padding:26px 14px 14px 20px;border-radius:6px 12px 12px 6px;background-color:var(--c);background-image:radial-gradient(circle at 50% 120%,transparent 9px,rgba(255,255,255,.14) 10px 12px,transparent 13px);background-size:22px 14px;color:#fff;text-decoration:none;box-shadow:var(--shadow-1);transition:transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s cubic-bezier(.16,1,.3,1)} .ds-tile:hover{transform:translateY(-3px) rotate(-.5deg);box-shadow:var(--shadow-2)} .ds-tile:focus-visible{outline:3px solid var(--moña);outline-offset:2px} .ds-title{font-family:var(--font-ui);font-weight:800;font-size:1.1875rem;line-height:1.12} .ds-code{align-self:flex-start;margin-top:8px;padding:1px 8px;border-radius:999px;background:rgba(255,255,255,.9);color:var(--ink);font-weight:700;font-size:.8125rem} .ds-flag{position:absolute;top:-8px;right:10px;padding:3px 10px;border-radius:999px;background:var(--tomate);color:#fff;font-family:var(--font-ui);font-weight:700;font-size:.8125rem;box-shadow:0 2px 6px rgba(168,36,27,.35)} .ds-etiqueta{margin-top:auto;padding:10px 14px 12px;border-radius:12px;background:var(--paper);color:var(--ink);border:2px solid var(--c);box-shadow:inset 0 0 0 3px var(--paper),inset 0 0 0 4.5px color-mix(in srgb,var(--c) 55%,white),0 2px 6px rgba(23,47,122,.18)} .ds-etiqueta div{display:grid;margin-top:2px} .ds-etiqueta span{font-family:var(--font-ui);font-weight:600;font-size:.8125rem;color:var(--ink-2)} .ds-etiqueta b{font-family:var(--font-hand);font-weight:400;font-size:1.125rem;line-height:1.1;color:var(--moña-deep);border-bottom:2px dotted var(--line-strong)} .ds-etiqueta b.late{color:var(--tomate-ink)}"
+    },
+    {
+      "name": "Status Pills",
+      "kind": "chip",
+      "refersTo": "pill-ok",
+      "description": "Copy state with a leading dot.",
+      "html": "<span><span class=\"ds-pill ok\">En la biblioteca</span> <span class=\"ds-pill out\">Prestado</span> <span class=\"ds-pill late\">Atrasado</span></span>",
+      "css": ".ds-pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-family:var(--font-body);font-weight:700;font-size:.875rem} .ds-pill::before{content:'';width:8px;height:8px;border-radius:50%;background:currentColor} .ds-pill.ok{background:var(--pasto-soft);color:var(--pasto-ink)} .ds-pill.out{background:var(--moña-soft);color:var(--moña-deep)} .ds-pill.late{background:var(--tomate-soft);color:var(--tomate-ink)}"
+    },
+    {
+      "name": "Undo Toast",
+      "kind": "custom",
+      "refersTo": "toast",
+      "description": "Ink confirmation with a sunflower undo instead of a confirm dialog.",
+      "html": "<div class=\"ds-toast\"><p>Devuelto: Matilda</p><button>Deshacer</button></div>",
+      "css": ".ds-toast{display:flex;align-items:center;gap:12px;max-width:560px;padding:12px 12px 12px 18px;border-radius:16px;background:var(--ink);color:#fff;font-family:var(--font-body);box-shadow:var(--shadow-2)} .ds-toast p{flex:1;margin:0} .ds-toast button{min-height:38px;padding:8px 18px;border:0;border-radius:999px;background:var(--girasol);color:var(--ink);font-family:var(--font-ui);font-weight:700;cursor:pointer} .ds-toast button:hover{background:var(--girasol-hover)} .ds-toast button:focus-visible{outline:3px solid var(--girasol);outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Forro y etiqueta",
+    "overview": "Every book in this library wears its school contact-paper forro, and every loan is an etiqueta escolar filled in by hand. The system is built from those two school objects: saturated colour fields with a faint repeating print stand for books, and white name labels with a rounded double frame stand for loans. Everything else (tables, fields, panels) recedes onto a cool túnica-white ground so the books carry the colour.\n\nIt is an operating tool for one librarian at a counter with a queue of children, so density is moderate and every target is large (44px minimum, 56px for the lend action). The children watching see a cheerful wall of covered books; the librarian sees exact dates, codes and states in a hyperlegible face. Cuteness comes from the materials (forros, labels, handwriting), never from emoji or pastel cards.\n\nThe cobalt \"moña\" forro runs across the top as the app's own band, with the same star print the books use. Sunflower yellow is the one action colour.",
+    "keyCharacteristics": [
+      "Book identity is a forro colour plus a print, stable for that book on every screen.",
+      "Loans render as an etiqueta stuck on the book's forro; names and dates on it are in handwriting.",
+      "One action colour (sunflower), used only where something can be pressed.",
+      "Soft, navy-tinted, blurred shadows; pill-shaped controls; a spine-side corner on every forro.",
+      "Spanish (UY) throughout; dates read dd/mm."
+    ],
+    "rules": [
+      {
+        "name": "The Pressable Sunflower Rule",
+        "body": "Full-strength Girasol (`#ffc53d`) appears only on things that can be pressed. If it is not a button, link or focus ring, it is not Girasol. The Girasol forro (`f-girasol`) is a book colour, and Girasol Soft is a warning tint; neither is the action colour.",
+        "section": "colors"
+      },
+      {
+        "name": "The Forro Is Identity Rule",
+        "body": "A book's forro colour and print are derived from its id and never change between screens. Never colour a book by state; state goes on the etiqueta, the late flag or a pill.",
+        "section": "colors"
+      },
+      {
+        "name": "The Quiet Print Rule",
+        "body": "Forro prints are white at no more than .14 alpha so white titles keep at least 3:1 against every forro. Light forros (Girasol, Naranja) switch their title to ink rather than raising the print.",
+        "section": "colors"
+      },
+      {
+        "name": "The Written On The Label Rule",
+        "body": "Patrick Hand is used only for what is written onto an etiqueta or its form lines (names, grade, dates, weekday). Headings, buttons and data never use it.",
+        "section": "typography"
+      },
+      {
+        "name": "The Calendar Speech Rule",
+        "body": "Dates read dd/mm (dd/mm/yyyy only outside the current year), with \"hoy\", \"mañana\" or \"ayer\" for the nearest days. When a date is being set, its weekday is spelled out beside it in handwriting (\"17/10 sábado\"), and it is typed the same way.",
+        "section": "typography"
+      },
+      {
+        "name": "The Soft Lift Rule",
+        "body": "Every shadow is blurred and tinted. No hard zero-blur offset shadows anywhere. (The etiqueta's inset rings are zero-offset spread rings that draw its double frame, not shadows.)",
+        "section": "elevation"
+      },
+      {
+        "name": "The Matching Frame Rule",
+        "body": "An etiqueta's frame always takes the colour of the forro it sits on.",
+        "section": "components"
+      },
+      {
+        "name": "The Counter Is The Forro Rule",
+        "body": "No nested cards. The forro is the container and the etiqueta is the only thing stuck on it; never put a forro or an etiqueta inside a panel to frame it again.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "**Do** derive a book's forro colour and print from its id and reuse them on every surface that shows that book.",
+      "**Do** frame each etiqueta in the colour of the forro it sits on.",
+      "**Do** keep forro prints at white .14 alpha or less, and switch titles to ink on Girasol and Naranja forros.",
+      "**Do** keep Girasol for things that can be pressed: one Go button per context, the toast's undo, the home mark.",
+      "**Do** write names, grades and dates on etiquetas in Patrick Hand; keep everything else in Baloo 2 or Atkinson Hyperlegible.",
+      "**Do** show dates as dd/mm, with the weekday spelled out wherever a date is being set.",
+      "**Do** use blurred, Moña-tinted shadows: Rest for surfaces, Lift for what responds.",
+      "**Do** keep touch targets at 44px or more and the lend action at 56px."
+    ],
+    "donts": [
+      "**Don't** use hard zero-blur offset shadows.",
+      "**Don't** put an inset side stripe on a forro; the forro's colour and print are the whole identity.",
+      "**Don't** use Girasol on non-pressable surfaces, labels, headings or decoration.",
+      "**Don't** nest cards: the counter is the forro itself, not a panel holding one.",
+      "**Don't** colour a book by its state; state lives on the etiqueta, the late flag and pills.",
+      "**Don't** use Patrick Hand for headings, buttons or table data."
+    ]
+  }
+}

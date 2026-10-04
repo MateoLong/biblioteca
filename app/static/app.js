@@ -75,7 +75,9 @@ function forro(bookId) {
   return { style: `--c: var(--f-${name}); ${dark ? "--on-c: var(--ink);" : ""}`, print, name };
 }
 const forroAttrs = (bookId) => { const f = forro(bookId); return `style="${f.style}" data-print="${f.print}"`; };
-const studentColor = (id) => `--c: var(--f-${FORROS[(Number(id) * 3 + 1) % FORROS.length]})`;
+// Avatars carry white initials, so only the dark forro inks are used for them.
+const AVATAR_INKS = ["cobalto", "tomate", "pasto", "violeta", "turquesa", "rosa"];
+const studentColor = (id) => `--c: var(--f-${AVATAR_INKS[(Number(id) * 5 + 1) % AVATAR_INKS.length]})`;
 const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
 const studentHref = (id) => `#/alumnos/${id}`;
