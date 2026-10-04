@@ -31,3 +31,20 @@ Unit tests green, `npm run verify` green, and an independent agent (one that did
 ## 6. Always pause for a human
 
 Publishing or changing the public address, anything that could wipe data on her iPad (e.g. changing the storage key or the backup format without a migration), deleting non-demo data.
+
+## 7. Verification log
+
+There are no PRs (solo project committed to `main`), so verdicts are recorded here. Evidence folders are local (`.verify/evidence/`, gitignored).
+
+| Date | Change | Checks | Independent verdict |
+|---|---|---|---|
+| 2026-10-03 | First version (Python + SQLite) | unit 22, e2e 44/44 | Verifier **PASS+NOTES** (duplicate codes left half-written rows → fixed and tested). Impeccable finish review: recapture, fix, fix, **ship**. |
+| 2026-10-03 | iPad port (static PWA, IndexedDB, offline) | unit 25, e2e 63/63 in WebKit at iPad sizes | No fresh independent run. Live site smoke-tested on an emulated iPad, including offline. |
+| 2026-10-03 | Excel .xlsx import; loan import; .xlsx downloads | unit 44 (planted bugs caught), e2e 68/68; files opened in Microsoft Excel | No fresh independent run. A re-import duplicate bug was caught by our own test and fixed. |
+| 2026-10-04 | Coalesced saves (found while building Mis clases) | unit 44, e2e 68/68 | Covered by the Mis clases verifier's save probe (300 rapid writes survive a reload). |
+
+## 8. Open items
+
+- **Not yet tried on her real iPad.** Check: Add to Home Screen, the keyboard over the counter fields, the backup file landing in Files, and her real Excel lists.
+- **Clearing demo data** also removes a real student's loans of demo books (by design: the demo copies go away).
+- **Old iPads** (before iPadOS 16.4) cannot read .xlsx and are told to paste the rows instead.
