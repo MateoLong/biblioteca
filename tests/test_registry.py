@@ -46,6 +46,18 @@ class RegistryTest(unittest.TestCase):
             self.r.add_book("Otro", codes=["Q-7"])
         self.assertEqual(e.exception.code, "code_taken")
 
+    def test_duplicate_codes_in_one_request_are_refused_and_nothing_is_left_behind(self):
+        with self.assertRaises(RegistryError) as e:
+            self.r.add_book("Dup", codes=["X-1", "x-1"])
+        self.assertEqual(e.exception.code, "code_taken")
+        self.r.add_student("Otra Alumna", "1A")  # an unrelated later write must not commit leftovers
+        self.assertEqual(self.r.ask("dup")["books"], [])
+        res = self.r.import_csv("books", "titulo;autor;ejemplares;codigo\nUno;A;2;Z-9 Z-9\nDos;B;1;\n")
+        self.assertEqual(res["added"], 1)
+        self.assertEqual(len(res["errors"]), 1)
+        self.assertEqual([b["title"] for b in self.r.ask("dos")["books"]], ["Dos"])
+        self.assertEqual(self.r.ask("uno")["books"], [])
+
     def test_grades_are_tidied_so_the_same_class_matches(self):
         self.assertEqual(self.martina["grade"], "4°B")
         self.assertEqual(self.bruno["grade"], "3°B")

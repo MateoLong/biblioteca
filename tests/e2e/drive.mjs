@@ -170,6 +170,8 @@ try {
   check("overdue", "Renovar gives 14 more days from today", readback.renew.due_on === addDays(TODAY, 14), JSON.stringify(readback.renew));
   check("overdue", "badge drops to 2", (await page.textContent("[data-testid=overdue-count]")).trim() === "2");
 
+  check("toasts", "never more than 3 toasts on screen", (await page.$$(".toast")).length <= 3);
+
   // ── F7 add a book ──
   await go("libros");
   await page.click("[data-testid=add-book-toggle]");
@@ -249,10 +251,16 @@ try {
   }
   // Impeccable review captures
   mkdirSync(join(ROOT, ".impeccable", "review"), { recursive: true });
-  await go("mostrador");
-  await page.screenshot({ path: join(ROOT, ".impeccable", "review", "desktop.png"), fullPage: true });
-  await phone.goto(`${BASE}/#/mostrador`); await phone.waitForLoadState("networkidle");
-  await phone.screenshot({ path: join(ROOT, ".impeccable", "review", "mobile.png"), fullPage: true });
+  // Fresh pages, no leftover toasts, tiles rendered: a valid capture of the first screen.
+  const openLoans = sql("SELECT COUNT(*) n FROM loans WHERE returned_on IS NULL")[0].n;
+  for (const [file, width, height] of [["desktop.png", 1440, 900], ["mobile.png", 390, 844]]) {
+    const fresh = await browser.newPage({ viewport: { width, height } });
+    await fresh.goto(`${BASE}/#/mostrador`);
+    await fresh.waitForFunction((n) => document.querySelectorAll("[data-testid=loan-tile]").length === n && !document.querySelector(".toast"), openLoans);
+    await fresh.waitForTimeout(300);
+    await fresh.screenshot({ path: join(ROOT, ".impeccable", "review", file), fullPage: true });
+    await fresh.close();
+  }
 
   check("console", "no JavaScript errors in any flow", consoleErrors.length === 0, consoleErrors.join(" | "));
   await browser.close();

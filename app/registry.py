@@ -147,17 +147,25 @@ class Registry:
         count = max(len(codes), int(copies or 1))
         if count < 1 or count > 200:
             raise RegistryError("invalid", "La cantidad de ejemplares tiene que estar entre 1 y 200.")
+        seen = set()
         for code in codes:
+            if code.upper() in seen:
+                raise RegistryError("code_taken", f"El código {code.upper()} está repetido.")
+            seen.add(code.upper())
             self._ensure_code_free(code)
-        cur = self.db.execute(
-            "INSERT INTO books(title, author, is_demo, created_at) VALUES (?, ?, ?, ?)",
-            (title, (author or "").strip(), int(demo), _now()),
-        )
-        book_id = cur.lastrowid
-        for i in range(count):
-            code = codes[i] if i < len(codes) else self._next_code()
-            self.db.execute("INSERT INTO copies(book_id, code) VALUES (?, ?)", (book_id, code.upper()))
-        self.db.commit()
+        try:
+            cur = self.db.execute(
+                "INSERT INTO books(title, author, is_demo, created_at) VALUES (?, ?, ?, ?)",
+                (title, (author or "").strip(), int(demo), _now()),
+            )
+            book_id = cur.lastrowid
+            for i in range(count):
+                code = codes[i] if i < len(codes) else self._next_code()
+                self.db.execute("INSERT INTO copies(book_id, code) VALUES (?, ?)", (book_id, code.upper()))
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
         return self.book(book_id)
 
     def _ensure_code_free(self, code: str):
@@ -605,7 +613,11 @@ class Registry:
                     raise RegistryError("invalid", "Tipo de importación desconocido.")
                 added += 1
             except RegistryError as e:
+                self.db.rollback()
                 errors.append(f"Fila {line_no}: {e.message}")
+            except (ValueError, sqlite3.Error):
+                self.db.rollback()
+                errors.append(f"Fila {line_no}: no la pude leer.")
         return {"added": added, "skipped": skipped, "errors": errors[:20]}
 
     def export_csv(self, kind: str) -> str:

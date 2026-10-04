@@ -31,7 +31,8 @@ async function api(method, path, body) {
 }
 
 // Dates arrive as ISO "2026-10-17"; she reads them as 17/10.
-let TODAY = new Date().toISOString().slice(0, 10);
+// Local date (not UTC) until the server answers with its own.
+let TODAY = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const dayDiff = (iso) => Math.round((Date.parse(iso) - Date.parse(TODAY)) / 86400000);
 function fmtDay(iso) {
   if (!iso) return "";
@@ -79,7 +80,10 @@ function toast(message, { action, label = "Deshacer", error = false, ms = 7000 }
     b.addEventListener("click", async () => { el.remove(); await action(); });
     el.append(b);
   }
-  $(".toasts").append(el);
+  const stack = $(".toasts");
+  stack.append(el);
+  // A queue of children means many toasts: keep only the newest three.
+  while (stack.children.length > 3) stack.firstElementChild.remove();
   setTimeout(() => el.remove(), ms);
 }
 const fail = (err) => toast(err.message, { error: true });
@@ -386,7 +390,7 @@ async function doLend(force) {
       notice.innerHTML = `<div class="notice notice-warn" role="alert"><p>${esc(err.message)} Si ya lo devolvió, registrá la devolución y se lo prestás a ${esc(desk.student.name)}.</p>
         <div class="row"><button type="button" class="btn btn-go btn-sm" data-act="swap">Registrar devolución y prestar</button></div></div>`;
       $("[data-act=swap]", notice).addEventListener("click", async () => {
-        try { await api("POST", "/api/returns", { code: desk.copy.code }); doLend(true); } catch (e) { fail(e); }
+        try { await api("POST", "/api/returns", { code: desk.copy.code }); doLend(false); } catch (e) { fail(e); }
       });
     } else {
       notice.innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`;

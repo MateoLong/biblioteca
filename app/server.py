@@ -213,6 +213,8 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(length) or b"{}")
             except json.JSONDecodeError:
                 return self._json(400, {"error": "Pedido inválido."})
+            if not isinstance(body, dict):
+                return self._json(400, {"error": "Pedido inválido."})
         for m, pattern, fn in ROUTES:
             match = pattern.match(url.path)
             if m == method and match:
@@ -220,10 +222,16 @@ class Handler(BaseHTTPRequestHandler):
                     with lock:
                         return self._json(200, fn(q, body, *match.groups()))
                 except RegistryError as e:
+                    registry.db.rollback()
                     status = 404 if e.code == "not_found" else 409
                     return self._json(status, {"error": e.message, "code": e.code, **e.info})
                 except (ValueError, TypeError) as e:
+                    registry.db.rollback()
                     return self._json(400, {"error": "Algún dato no tiene el formato esperado.", "detail": str(e)})
+                except Exception as e:  # never leave half a change waiting to be committed
+                    registry.db.rollback()
+                    print(f"Error inesperado en {method} {url.path}: {e!r}", file=sys.stderr)
+                    return self._json(500, {"error": "No se pudo guardar. No se cambió nada; probá de nuevo."})
         self._json(404, {"error": "No encontrado."})
 
     def _export(self, kind: str):
