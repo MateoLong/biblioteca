@@ -22,6 +22,7 @@ colors:
   f-turquesa: "#0b7e82"
   f-rosa: "#c23d7b"
   f-naranja: "#f08a24"
+  f-gris: "#6c7391"
   ground: "#f1f4fb"
   paper: "#ffffff"
   ink: "#1b2340"
@@ -198,7 +199,7 @@ It is an operating tool for one librarian at a counter with a queue of children,
 The cobalt "moña" forro runs across the top as the app's own band, with the same star print the books use. Sunflower yellow is the one action colour.
 
 **Key Characteristics:**
-- Book identity is a forro colour plus a print, stable for that book on every screen.
+- A book's forro colour is its age band, the same sticker colour the real book carries (Azul 0–7, Rojo 7–10, Verde 10–12; Gris until set). Its print tells books of the same band apart, stable on every screen.
 - Loans render as an etiqueta stuck on the book's forro; names and dates on it are in handwriting.
 - One action colour (sunflower), used only where something can be pressed.
 - Soft, navy-tinted, blurred shadows; pill-shaped controls; a spine-side corner on every forro.
@@ -215,7 +216,7 @@ A cool school-uniform shell (moña blue on túnica white) carrying eight saturat
 - **Girasol** (`girasol`): the single action colour. Primary buttons (Prestar, Prestarle un libro, Prestar igual), the toast's undo button, the brand mark in the home link, and the focus outline on band tabs. Girasol Hover deepens it on hover. Girasol Soft is a different job: the warning tint for the demo strip and `notice-warn`, never a button.
 
 ### Tertiary
-- **Forros** (`f-cobalto`, `f-tomate`, `f-girasol`, `f-pasto`, `f-violeta`, `f-turquesa`, `f-rosa`, `f-naranja`): book covers only, plus student avatars (avatars use only the six dark inks, never Girasol or Naranja, because their initials are white). A book's forro is picked deterministically from its id along with one of six prints (dots, stripes, stars, checks, waves, plain), so the same book looks the same in the tile wall, the lend form's picked line, listbox options, table swatches and its detail page. Titles on forros are white, except on Girasol and Naranja forros, which take ink.
+- **Forros** (`f-cobalto`, `f-tomate`, `f-girasol`, `f-pasto`, `f-violeta`, `f-turquesa`, `f-rosa`, `f-naranja`, `f-gris`): book covers carry only the three age-band inks: Cobalto = Azul (0 a 7 años), Tomate = Rojo (7 a 10), Pasto = Verde (10 a 12), and `f-gris` for a book whose band is not set yet (so she can spot it). The other forros stay for student avatars (only the six dark inks, never Girasol or Naranja, because their initials are white). A book's print (dots, stripes, stars, checks, waves, plain) is picked deterministically from its id, so the same book looks the same in the tile wall, the lend form's picked line, listbox options, table swatches and its detail page. Titles on forros are white.
 
 ### Neutral
 - **Túnica Ground** (`ground`): page background, the Prestar/Devolver switch track, sample code blocks.
@@ -230,9 +231,9 @@ A cool school-uniform shell (moña blue on túnica white) carrying eight saturat
 ### Named Rules
 **The Pressable Sunflower Rule.** Full-strength Girasol (`#ffc53d`) appears only on things that can be pressed. If it is not a button, link or focus ring, it is not Girasol. The Girasol forro (`f-girasol`) is a book colour, and Girasol Soft is a warning tint; neither is the action colour.
 
-**The Forro Is Identity Rule.** A book's forro colour and print are derived from its id and never change between screens. Never colour a book by state; state goes on the etiqueta, the late flag or a pill.
+**The Forro Is the Sticker Rule.** A book's forro colour is its age band, exactly as the sticker on the real book (set by her, not derived), and its print is derived from its id; both are the same on every screen. Never colour a book by state; state goes on the etiqueta, the late flag or a pill. Never use a non-band ink for a book cover, or a pink or orange book could be read as Rojo.
 
-**The Quiet Print Rule.** Forro prints are white at no more than .14 alpha so white titles keep at least 3:1 against every forro. Light forros (Girasol, Naranja) switch their title to ink rather than raising the print.
+**The Quiet Print Rule.** Forro prints are white at no more than .14 alpha so white titles keep at least 3:1 against every forro. Book covers only use the dark band inks (Cobalto, Tomate, Pasto, Gris), so titles stay white; a light ink must never become a book colour.
 
 ## Typography
 

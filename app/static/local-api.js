@@ -92,11 +92,11 @@ const ROUTES = [
   ["PATCH", /^\/api\/loans\/(\d+)$/, (q, b, id) => registry.setDue(id, b.due_on || "")],
   ["GET", /^\/api\/books$/, (q) => registry.books(q.get("archived") === "1")],
   ["POST", /^\/api\/books$/, (q, b) => registry.addBook(b.title || "", b.author || "", Number(b.copies) || 1,
-    String(b.codes || "").split(/[\s,]+/).filter(Boolean))],
+    String(b.codes || "").split(/[\s,]+/).filter(Boolean), false, b.color || "")],
   ["GET", /^\/api\/books\/(\d+)$/, (q, b, id) => ({ ...registry.book(id), history: registry.bookHistory(id) })],
   ["PATCH", /^\/api\/books\/(\d+)$/, (q, b, id) => {
     if ("archived" in b) registry.setBookArchived(id, b.archived);
-    if ("title" in b || "author" in b) registry.updateBook(id, b);
+    if ("title" in b || "author" in b || "color" in b) registry.updateBook(id, b);
     return registry.book(id);
   }],
   ["POST", /^\/api\/books\/(\d+)\/copies$/, (q, b, id) => registry.addCopy(id, b.code)],

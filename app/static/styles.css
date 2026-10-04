@@ -40,6 +40,7 @@
   --f-turquesa: #0b7e82;
   --f-rosa: #c23d7b;
   --f-naranja: #f08a24;
+  --f-gris: #6c7391; /* a book whose age band is not set yet */
 
   --font-ui: "Baloo 2", "Atkinson Hyperlegible", system-ui, sans-serif;
   --font-body: "Atkinson Hyperlegible", system-ui, sans-serif;
@@ -200,7 +201,8 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
   transition: border-color .15s var(--ease-out), background-color .15s var(--ease-out);
 }
 .chip:hover { border-color: var(--moña); }
-.chip[aria-pressed="true"] { background: var(--moña); border-color: var(--moña); color: #fff; }
+.chip[aria-pressed="true"], .chip[aria-current="true"] { background: var(--moña); border-color: var(--moña); color: #fff; }
+.chip[aria-current="true"] .muted { color: rgba(255, 255, 255, .85); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .panel { background: var(--paper); border-radius: var(--r-lg); box-shadow: var(--shadow-1); padding: 24px; }
@@ -230,6 +232,25 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .forro[data-print="stars"] { background-image: var(--print-stars); background-size: 36px 36px; }
 .forro[data-print="waves"] { background-image: radial-gradient(circle at 50% 120%, transparent 9px, rgba(255,255,255,.14) 10px 12px, transparent 13px); background-size: 22px 14px; }
 .swatch { width: 30px; height: 40px; flex: none; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); flex: none; display: inline-block; }
+
+/* age-band colour picker and filter */
+.color-field { border: 0; padding: 0; margin: 0; min-width: 0; }
+.color-field legend { padding: 0; margin-bottom: 8px; font-family: var(--font-ui); font-weight: 600; font-size: 1rem; color: var(--ink); }
+#edit-form .color-field { margin-bottom: 16px; }
+.color-picks { display: flex; flex-wrap: wrap; gap: 8px; }
+.color-pick {
+  position: relative; display: inline-flex; align-items: center; gap: 10px;
+  min-height: 48px; padding: 6px 16px 6px 8px; border-radius: 999px;
+  border: 2px solid var(--line-strong); background: var(--paper); cursor: pointer;
+}
+.color-pick input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.color-pick .swatch { width: 24px; height: 32px; }
+.color-pick:has(input:checked) { border-color: var(--moña); background: var(--moña-soft); box-shadow: inset 0 0 0 1px var(--moña); }
+.color-pick:has(input:focus-visible) { outline: 3px solid var(--moña); outline-offset: 2px; }
+.color-filter { margin-bottom: 14px; }
+.color-filter .chip .muted { font-weight: 400; }
+[data-testid=book-color] { display: inline-flex; align-items: center; gap: 8px; }
 
 /* ── etiqueta: the school name label ───────────────────────────── */
 .etiqueta {

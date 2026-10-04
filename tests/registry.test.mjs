@@ -2,7 +2,7 @@
 // Run: node --test tests/
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { Registry, RegistryError, emptyState, addDays } from "../app/static/registry.js";
+import { Registry, RegistryError, emptyState, addDays, tidyColor } from "../app/static/registry.js";
 import * as DEMO from "../app/static/demo-data.js";
 
 let r, clock, saves, matilda, principito, martina, joaquin, bruno;
@@ -173,6 +173,68 @@ test("import students and books from Excel-style CSV and pasted tabs", () => {
   assert.equal(res.added, 1);
   assert.equal(res.errors.length, 1);
   assert.equal(r.ask("corazon").books[0].total, 3);
+});
+
+// ── age-band colour (the sticker on the real book) ──
+test("colour is read from a name or an age range, and anything else is refused", () => {
+  for (const [typed, want] of [["Azul", "azul"], [" ROJO ", "rojo"], ["verde", "verde"], ["0 a 7", "azul"], ["7-10", "rojo"],
+    ["7 a 10 años", "rojo"], ["10 al 12", "verde"], ["", ""], ["Sin color", ""], [null, ""],
+    ["Azul (0 a 7)", "azul"], ["de 7 a 10", "rojo"], ["7/10", "rojo"],
+    // what Excel leaves when it turns "7-10" / "10-12" into dates: serials, or the date pasted as text
+    ["46302", "rojo"], ["46213", "rojo"], ["46366", "verde"], ["07/10/2026", "rojo"], ["12/10/2026", "verde"]]) assert.equal(tidyColor(typed), want, String(typed));
+  for (const bad of ["amarillo", "7 a 12", "8", "46300", "05/10/2026"]) rejects(() => tidyColor(bad), "invalid");
+});
+
+test("a book keeps its colour, can change it, and loans and suggestions carry it", () => {
+  assert.equal(matilda.color, "");
+  const monstruo = r.addBook("El monstruo de colores", "Anna Llenas", 1, [], false, "0 a 7");
+  assert.equal(r.book(monstruo.id).color, "azul");
+  assert.equal(r.updateBook(matilda.id, { color: "rojo" }).color, "rojo");
+  assert.equal(r.updateBook(matilda.id, { title: "Matilda" }).color, "rojo", "editing the title leaves the colour alone");
+  rejects(() => r.updateBook(matilda.id, { color: "violeta" }), "invalid");
+  assert.equal(r.book(matilda.id).color, "rojo", "a refused colour changes nothing");
+  r.lend("B-0001", martina.id);
+  assert.equal(r.openLoans()[0].color, "rojo");
+  assert.equal(r.suggestCopies("monstruo", "lend")[0].color, "azul");
+  assert.equal(r.topBooks()[0].color, "rojo");
+  assert.equal(r.updateBook(matilda.id, { color: "" }).color, "", "the colour can be cleared");
+});
+
+test("book import reads a Color or Edad column; an unreadable colour loads the book without one and says so", () => {
+  let res = r.importCsv("books", "Titulo;Autor;Ejemplares;Color\nCorazón;De Amicis;1;Verde\nPinocho;Collodi;1;\nOtro;X;2;fucsia\n");
+  assert.equal(res.added, 3, "an unreadable colour never drops the book");
+  assert.equal(res.errors.length, 1);
+  assert.match(res.errors[0], /Fila 4: no entendí el color «fucsia»; cargué «Otro» sin color/);
+  assert.equal(r.ask("corazon").books[0].color, "verde");
+  assert.equal(r.ask("pinocho").books[0].color, "");
+  assert.equal(r.ask("otro").books[0].color, "");
+  assert.equal(r.ask("otro").books[0].total, 2);
+  res = r.importCsv("books", "titulo\tedad\nRuperto\t7 a 10");
+  assert.equal(r.ask("ruperto").books[0].color, "rojo");
+});
+
+test("an old backup without colours restores with every book unset, and the Libros sheet has a Color column", () => {
+  const old = JSON.parse(r.backup());
+  for (const b of old.books) delete b.color;
+  const other = new Registry(emptyState(), { today: () => clock.day });
+  other.restore(JSON.stringify(old));
+  assert.deepEqual(other.books().map((b) => b.color), ["", ""]);
+  const edited = JSON.parse(r.backup());
+  edited.books[0].color = "Azul";
+  edited.books[1].color = "<b>";
+  other.restore(JSON.stringify(edited));
+  assert.deepEqual(other.books().map((b) => b.color).sort(), ["", "azul"], "a hand-edited colour is tidied, junk is dropped");
+  r.updateBook(matilda.id, { color: "rojo" });
+  const t = r.exportTable("books");
+  assert.equal(t.columns[3][0], "Color");
+  assert.equal(t.rows.find((row) => row[1] === "Matilda")[3], "Rojo");
+});
+
+test("demo books come with their colours", () => {
+  const d = new Registry(emptyState(), { today: () => clock.day });
+  d.loadDemo(DEMO);
+  assert.equal(d.ask("monstruo de colores").books[0].color, "azul");
+  assert.ok(d.books().every((b) => ["azul", "rojo", "verde"].includes(b.color)));
 });
 
 test("export loans CSV has states, ';' and a BOM", () => {

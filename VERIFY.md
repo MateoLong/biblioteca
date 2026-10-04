@@ -43,6 +43,7 @@ There are no PRs (solo project committed to `main`), so verdicts are recorded he
 | 2026-10-03 | Excel .xlsx import; loan import; .xlsx downloads | unit 44 (planted bugs caught), e2e 68/68; files opened in Microsoft Excel | No fresh independent run. A re-import duplicate bug was caught by our own test and fixed. |
 | 2026-10-04 | Coalesced saves (found while building Mis clases) | unit 44, e2e 68/68 | Covered by the Mis clases verifier's save probe (300 rapid writes survive a reload). |
 | 2026-10-04 | "Cómo se usa" help screen (`#/ayuda`, "?" in the band), next-step hints in empty histories | unit 44, e2e 79/79 (new checks mutated red, then reverted) | Verifier **PASS+NOTES**: two help steps over-promised (clearing demo data also removes real loans of demo books; a broken copy is "Dar de baja", not archive) → reworded, along with the same promise in Ajustes and its toast. |
+| 2026-10-04 | Book colour is the age band (azul 0–7, rojo 7–10, verde 10–12; grey until set): picker, Libros filter, Excel Color/Edad column, ADR 0005 | unit 49, e2e 88/88 (band audit on 5 screens; planted regressions caught) | Verifier **PASS+NOTES**, data safety measured: state and backups from the previous version load unchanged with every book "Sin color". Fixed after: Excel date-mangled "7-10" read back; unreadable colour no longer drops the book; restore tidies hand-edited colours; e2e band audit added. |
 
 ## 8. Open items
 

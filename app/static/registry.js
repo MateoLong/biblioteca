@@ -40,6 +40,32 @@ export function tidyGrade(grade) {
   return m ? `${m[1]}°${(m[2] || "").toUpperCase()}` : g;
 }
 
+// Books wear the school's age-band colour: the sticker on the real book. "" means not set yet.
+export const COLORS = { azul: "0 a 7 años", rojo: "7 a 10 años", verde: "10 a 12 años" };
+const COLOR_BY_AGES = { "0-7": "azul", "7-10": "rojo", "10-12": "verde" };
+
+/**
+ * 'Azul', 'Rojo (7 a 10)', '0 a 7', 'de 7 a 10 años', '' -> 'azul' | 'rojo' | 'verde' | ''. Anything else is refused.
+ * Excel likes to turn "7-10" into a date (7 Oct, or 10 Jul): a serial like 46302, or "07/10/2026" when pasted.
+ * Those are read back as the age range they were typed as.
+ */
+export function tidyColor(text) {
+  const t = norm(text).replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
+  if (!t || t === "sin color" || t === "-") return "";
+  const word = t.match(/^(azul|rojo|verde)\b/);
+  if (word) return word[1];
+  let pair = t.replace(/^de /, "").match(/^(\d{1,2}) ?(?:a|al|-|\/) ?(\d{1,2})(?: ?anos)?$/)
+    || t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-]\d{2,4}$/);
+  if (pair) pair = [Number(pair[1]), Number(pair[2])];
+  else if (/^\d{5}(\.0+)?$/.test(t) && Number(t) > 30000 && Number(t) < 80000) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Number(t) * 86400000);
+    pair = [d.getUTCDate(), d.getUTCMonth() + 1];
+  }
+  const band = pair && COLOR_BY_AGES[pair.sort((a, b) => a - b).join("-")];
+  if (band) return band;
+  throw new RegistryError("invalid", `No entendí el color «${String(text).trim()}». Usá azul (0 a 7), rojo (7 a 10) o verde (10 a 12).`);
+}
+
 const gradeSort = (g) => { const m = String(g || "").match(/^(\d+)/); return [m ? 0 : 1, m ? Number(m[1]) : 0, norm(g)]; };
 const cmp = (a, b) => { for (let i = 0; i < a.length; i++) { if (a[i] < b[i]) return -1; if (a[i] > b[i]) return 1; } return 0; };
 const byKey = (fn) => (x, y) => cmp(fn(x), fn(y));
@@ -155,9 +181,10 @@ export class Registry {
     if (taken) throw new RegistryError("code_taken", `El código ${taken.code} ya está en uso.`);
   }
 
-  addBook(title, author = "", copies = 1, codes = [], demo = false) {
+  addBook(title, author = "", copies = 1, codes = [], demo = false, color = "") {
     title = String(title || "").trim();
     if (!title) throw new RegistryError("invalid", "Falta el título del libro.");
+    color = tidyColor(color);
     codes = (codes || []).map((c) => String(c).trim()).filter(Boolean);
     const count = Math.max(codes.length, Number(copies) || 1);
     if (count < 1 || count > 200) throw new RegistryError("invalid", "La cantidad de ejemplares tiene que estar entre 1 y 200.");
@@ -169,7 +196,7 @@ export class Registry {
     }
     const id = this._write((s) => {
       const bookId = this._nextId("book");
-      s.books.push({ id: bookId, title, author: String(author || "").trim(), archived: false, is_demo: demo, created_at: now() });
+      s.books.push({ id: bookId, title, author: String(author || "").trim(), color, archived: false, is_demo: demo, created_at: now() });
       for (let i = 0; i < count; i++) {
         const code = i < codes.length ? codes[i] : this._nextCode();
         s.copies.push({ id: this._nextId("copy"), book_id: bookId, code: code.toUpperCase(), archived: false });
@@ -187,12 +214,13 @@ export class Registry {
     return this.book(bookId);
   }
 
-  updateBook(bookId, { title, author } = {}) {
+  updateBook(bookId, { title, author, color } = {}) {
     const b = this._requireBook(bookId);
     title = title == null ? b.title : String(title).trim();
     if (!title) throw new RegistryError("invalid", "Falta el título del libro.");
     author = author == null ? b.author : String(author).trim();
-    this._write((s) => Object.assign(s.books.find((x) => x.id === b.id), { title, author }));
+    color = color == null ? b.color : tidyColor(color);
+    this._write((s) => Object.assign(s.books.find((x) => x.id === b.id), { title, author, color }));
     return this.book(bookId);
   }
 
@@ -329,7 +357,7 @@ export class Registry {
     const open = l.returned_on == null;
     const daysLate = open ? Math.max(0, daysBetween(l.due_on, this.today())) : 0;
     return {
-      id: l.id, code: c.code, book_id: b.id, title: b.title, author: b.author,
+      id: l.id, code: c.code, book_id: b.id, title: b.title, author: b.author, color: b.color,
       student_id: s.id, student: s.name, grade: s.grade,
       lent_on: l.lent_on, due_on: l.due_on, returned_on: l.returned_on ?? null,
       open, days_late: daysLate, overdue: daysLate > 0,
@@ -416,7 +444,7 @@ export class Registry {
   topBooks(limit = 10) {
     const counts = new Map();
     for (const l of this.state.loans) { const b = this._copy(l.copy_id).book_id; counts.set(b, (counts.get(b) || 0) + 1); }
-    return [...counts].map(([id, n]) => { const b = this.state.books.find((x) => x.id === id); return { id, title: b.title, author: b.author, times_lent: n }; })
+    return [...counts].map(([id, n]) => { const b = this.state.books.find((x) => x.id === id); return { id, title: b.title, author: b.author, color: b.color, times_lent: n }; })
       .sort((a, b) => b.times_lent - a.times_lent || (a.title < b.title ? -1 : 1)).slice(0, limit);
   }
 
@@ -472,7 +500,7 @@ export class Registry {
       const loan = this._openLoanForCopy(c.id);
       if (Boolean(loan) !== (mode === "return")) continue;
       const s = loan ? this.state.students.find((x) => x.id === loan.student_id) : null;
-      const row = { code: c.code, book_id: b.id, title: b.title, author: b.author, loan_id: loan?.id ?? null,
+      const row = { code: c.code, book_id: b.id, title: b.title, author: b.author, color: b.color, loan_id: loan?.id ?? null,
         student: s?.name ?? null, grade: s?.grade ?? null, due_on: loan?.due_on ?? null };
       const hay = norm([c.code, b.title, b.author, s?.name || "", s?.grade || ""].join(" "));
       if (words.every((w) => hay.includes(w))) out.push(row);
@@ -515,7 +543,7 @@ export class Registry {
     const top = rows.findIndex((r) => r.some((c) => c.trim()));
     if (top < 0) throw new RegistryError("invalid", "El archivo está vacío.");
     let header = rows[top].map(norm);
-    const known = new Set(["titulo", "autor", "ejemplares", "codigo", "codigos", "nombre", "clase", "grado", "grupo"]);
+    const known = new Set(["titulo", "autor", "ejemplares", "codigo", "codigos", "color", "edad", "nombre", "clase", "grado", "grupo"]);
     let body, firstLine;
     if (header.some((h) => known.has(h))) { body = rows.slice(top + 1); firstLine = top + 2; }
     else { header = kind === "books" ? ["titulo", "autor", "ejemplares", "codigo"] : ["nombre", "clase"]; body = rows.slice(top); firstLine = top + 1; }
@@ -531,7 +559,10 @@ export class Registry {
           if (this.state.books.some((b) => norm(b.title) === norm(title) && norm(b.author) === norm(author))) { skipped++; return; }
           const codes = get(row, "codigo", "codigos").split(/[\s,|/]+/).filter(Boolean);
           const n = get(row, "ejemplares");
-          this.addBook(title, author, /^\d+(\.0+)?$/.test(n) ? Number(n) : 1, codes);
+          // A colour it can't read never costs her the book: it comes in without one, and she is told.
+          let color = get(row, "color", "edad");
+          try { color = tidyColor(color); } catch { errors.push(`Fila ${firstLine + i}: no entendí el color «${color}»; cargué «${title}» sin color.`); color = ""; }
+          this.addBook(title, author, /^\d+(\.0+)?$/.test(n) ? Number(n) : 1, codes, false, color);
         } else if (kind === "students") {
           const name = get(row, "nombre"), grade = get(row, "clase", "grado", "grupo");
           if (this.state.students.some((s) => norm(s.name) === norm(name) && gradeKey(s.grade) === gradeKey(grade))) { skipped++; return; }
@@ -657,11 +688,11 @@ export class Registry {
       const rows = [];
       for (const b of this.books(true)) {
         for (const c of this.book(b.id).copies) {
-          rows.push([c.code, b.title, b.author, c.archived || b.archived ? "Dado de baja" : c.loan ? "Prestado" : "Disponible",
+          rows.push([c.code, b.title, b.author, b.color ? b.color[0].toUpperCase() + b.color.slice(1) : "", c.archived || b.archived ? "Dado de baja" : c.loan ? "Prestado" : "Disponible",
             c.loan?.student || "", c.loan?.grade || "", c.loan?.due_on || null]);
         }
       }
-      return { name: "Libros", columns: [["Código", 10], ["Título", 34], ["Autor", 24], ["Estado", 13], ["Lo tiene", 26], ["Clase", 8], ["Vence", 12, D]], rows };
+      return { name: "Libros", columns: [["Código", 10], ["Título", 34], ["Autor", 24], ["Color", 8], ["Estado", 13], ["Lo tiene", 26], ["Clase", 8], ["Vence", 12, D]], rows };
     }
     if (kind === "students") {
       return {
@@ -709,9 +740,9 @@ export class Registry {
     if (this.summary().has_demo) throw new RegistryError("invalid", "Los datos de ejemplo ya están cargados.");
     const start = Number(this._nextCode().slice(2));
     const bookIds = [], studentIds = [];
-    demo.BOOKS.forEach(([title, author, n], i) => {
+    demo.BOOKS.forEach(([title, author, n, color], i) => {
       const codes = Array.from({ length: n }, (_, k) => `B-${String(start + i * 3 + k).padStart(4, "0")}`);
-      bookIds.push(this.addBook(title, author, n, codes, true).id);
+      bookIds.push(this.addBook(title, author, n, codes, true, color).id);
     });
     for (const [name, grade] of demo.STUDENTS) studentIds.push(this.addStudent(name, grade, true).id);
     const today = this.today();
@@ -744,7 +775,9 @@ export class Registry {
 
 function migrate(state) {
   const base = emptyState();
-  return { ...base, ...state, seq: { ...base.seq, ...(state.seq || {}) }, settings: { ...base.settings, ...(state.settings || {}) } };
+  // Books saved before the age-band colour existed have none yet.
+  const books = (state.books || base.books).map((b) => { let color = ""; try { color = tidyColor(b.color); } catch { /* unreadable: unset */ } return { ...b, color }; });
+  return { ...base, ...state, books, seq: { ...base.seq, ...(state.seq || {}) }, settings: { ...base.settings, ...(state.settings || {}) } };
 }
 
 /** CSV / pasted spreadsheet text -> rows. Handles quotes; picks ';', ',' or tab from the first line. */

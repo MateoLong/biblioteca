@@ -1,20 +1,20 @@
 // Example data so the app can be tried before the real catalogue is loaded.
 // Every row is marked as demo and can be removed from Ajustes. Names are invented.
 
-// [title, author, copies]
+// [title, author, copies, age-band colour]
 export const BOOKS = [
-  ["Cuentos de la selva", "Horacio Quiroga", 3],
-  ["Matilda", "Roald Dahl", 2],
-  ["El Principito", "Antoine de Saint-Exupéry", 3],
-  ["Pateando lunas", "Roy Berocay", 2],
-  ["Ruperto detective", "Roy Berocay", 1],
-  ["Charlie y la fábrica de chocolate", "Roald Dahl", 2],
-  ["El monstruo de colores", "Anna Llenas", 2],
-  ["Donde viven los monstruos", "Maurice Sendak", 1],
-  ["Harry Potter y la piedra filosofal", "J. K. Rowling", 2],
-  ["Las aventuras de Pinocho", "Carlo Collodi", 1],
-  ["Mafalda 1", "Quino", 2],
-  ["El Superzorro", "Roald Dahl", 1],
+  ["Cuentos de la selva", "Horacio Quiroga", 3, "rojo"],
+  ["Matilda", "Roald Dahl", 2, "rojo"],
+  ["El Principito", "Antoine de Saint-Exupéry", 3, "verde"],
+  ["Pateando lunas", "Roy Berocay", 2, "rojo"],
+  ["Ruperto detective", "Roy Berocay", 1, "rojo"],
+  ["Charlie y la fábrica de chocolate", "Roald Dahl", 2, "verde"],
+  ["El monstruo de colores", "Anna Llenas", 2, "azul"],
+  ["Donde viven los monstruos", "Maurice Sendak", 1, "azul"],
+  ["Harry Potter y la piedra filosofal", "J. K. Rowling", 2, "verde"],
+  ["Las aventuras de Pinocho", "Carlo Collodi", 1, "azul"],
+  ["Mafalda 1", "Quino", 2, "verde"],
+  ["El Superzorro", "Roald Dahl", 1, "rojo"],
 ];
 
 // [name, class]

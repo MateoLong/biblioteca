@@ -2,6 +2,7 @@
    Data lives on this device; local-api.js answers the same routes a server would. */
 import { start, call, download, flushed } from "./local-api.js";
 import { readXlsx } from "./xlsx.js";
+import { COLORS } from "./registry.js";
 
 // ── small helpers ─────────────────────────────────────────────────────
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -58,17 +59,26 @@ function parseDM(text) {
 }
 const addDays = (iso, n) => new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
 
-// Each book keeps the same forro colour and print everywhere.
-const FORROS = ["cobalto", "tomate", "girasol", "pasto", "violeta", "turquesa", "rosa", "naranja"];
+// A book's forro colour is its age band, like the sticker on the real book; grey until she sets one.
+// The print comes from the id, so two books of the same band still look different.
+const FORRO_BY_COLOR = { azul: "cobalto", rojo: "tomate", verde: "pasto" };
 const PRINTS = ["dots", "stripes", "stars", "checks", "waves", "plain"];
-function forro(bookId) {
-  const n = Number(bookId) || 0;
-  const name = FORROS[(n * 5 + 3) % FORROS.length];
-  const print = PRINTS[(n * 7 + 1) % PRINTS.length];
-  const dark = name === "girasol" || name === "naranja";
-  return { style: `--c: var(--f-${name}); ${dark ? "--on-c: var(--ink);" : ""}`, print, name };
+// book: a book ({id, color}) or anything that carries one ({book_id, color}).
+function forro(book) {
+  const n = Number(book.book_id ?? book.id) || 0;
+  const name = FORRO_BY_COLOR[book.color] || "gris";
+  return { style: `--c: var(--f-${name});`, print: PRINTS[(n * 7 + 1) % PRINTS.length], name };
 }
-const forroAttrs = (bookId) => { const f = forro(bookId); return `style="${f.style}" data-print="${f.print}"`; };
+const forroAttrs = (book) => { const f = forro(book); return `style="${f.style}" data-print="${f.print}" data-color="${book.color || ""}"`; };
+const colorName = (color) => (color ? color[0].toUpperCase() + color.slice(1) : "Sin color");
+// Radio pills: Azul 0 a 7 · Rojo 7 a 10 · Verde 10 a 12 · Sin color.
+function colorPicks(current = "") {
+  return `<fieldset class="field color-field"><legend>Color (edad)</legend><div class="color-picks">
+    ${["azul", "rojo", "verde", ""].map((c) => `<label class="color-pick"><input type="radio" name="color" value="${c}" ${c === (current || "") ? "checked" : ""} data-testid="color-${c || "none"}">
+      <span class="forro swatch" style="--c: var(--f-${FORRO_BY_COLOR[c] || "gris"})" data-print="plain"></span>
+      <span>${c ? `<strong>${colorName(c)}</strong> ${COLORS[c].replace(" años", "")}` : "<strong>Sin color</strong>"}</span></label>`).join("")}
+  </div></fieldset>`;
+}
 // Avatars carry white initials, so only the dark forro inks are used for them.
 const AVATAR_INKS = ["cobalto", "tomate", "pasto", "violeta", "turquesa", "rosa"];
 const studentColor = (id) => `--c: var(--f-${AVATAR_INKS[(Number(id) * 5 + 1) % AVATAR_INKS.length]})`;
@@ -182,7 +192,7 @@ function combobox(input, { fetcher, render, onPick, emptyText }) {
 
 // ── pieces ────────────────────────────────────────────────────────────
 function etiqueta(loan, { write = false } = {}) {
-  return `<div class="etiqueta ${loan.overdue ? "is-late" : ""}" style="--c: var(--f-${forro(loan.book_id).name})">
+  return `<div class="etiqueta ${loan.overdue ? "is-late" : ""}" style="--c: var(--f-${forro(loan).name})">
     <div class="etiqueta-line"><span>Nombre</span><span class="hand ${write ? "write" : ""}">${esc(loan.student)}</span></div>
     <div class="etiqueta-line"><span>Grado</span><span class="hand ${write ? "write" : ""}">${esc(loan.grade || "—")}</span></div>
     <div class="etiqueta-line"><span>Vuelve</span><span class="hand due ${write ? "write" : ""}">${esc(fmtRel(loan.due_on))}</span></div>
@@ -192,7 +202,7 @@ function etiqueta(loan, { write = false } = {}) {
 function loanTile(loan, { tag = "a", animate = false } = {}) {
   const href = tag === "a" ? `href="${studentHref(loan.student_id)}"` : "";
   const label = `${loan.title}, lo tiene ${loan.student}${loan.grade ? " de " + loan.grade : ""}, vuelve ${fmtRel(loan.due_on)}${loan.overdue ? ", atrasado" : ""}`;
-  return `<${tag} ${href} class="forro loan-tile ${animate ? "just-lent" : ""}" ${forroAttrs(loan.book_id)} aria-label="${esc(label)}" data-testid="loan-tile">
+  return `<${tag} ${href} class="forro loan-tile ${animate ? "just-lent" : ""}" ${forroAttrs(loan)} aria-label="${esc(label)}" data-testid="loan-tile">
     ${loan.overdue ? `<span class="late-flag">${plural(loan.days_late, "día", "días")} tarde</span>` : ""}
     <span class="tile-title">${esc(loan.title)}</span>
     <span class="tile-code">${esc(loan.code)}</span>
@@ -339,7 +349,7 @@ function renderCounter() {
       <div id="return-notice"></div>`;
     combobox($("#r-q"), {
       fetcher: (q) => api("GET", `/api/suggest/copies?mode=return&q=${encodeURIComponent(q)}`),
-      render: (c) => `<span class="forro swatch" ${forroAttrs(c.book_id)}></span>
+      render: (c) => `<span class="forro swatch" ${forroAttrs(c)}></span>
         <span><span class="opt-main">${esc(c.title)}</span> <span class="code">${esc(c.code)}</span><br>
         <span class="opt-sub">lo tiene ${esc(c.student)}${c.grade ? ` (${esc(c.grade)})` : ""} · vuelve ${esc(fmtRel(c.due_on))}</span></span>`,
       emptyText: (q) => `Ningún libro prestado coincide con «${q}».`,
@@ -390,7 +400,7 @@ function paintCopySlot() {
   if (desk.copy) {
     const c = desk.copy;
     slot.innerHTML = `<div class="picked-line" data-testid="picked-copy">
-      <span class="forro swatch" ${forroAttrs(c.book_id)}></span>
+      <span class="forro swatch" ${forroAttrs(c)}></span>
       <span class="hand picked-hand">${esc(c.title)}</span>
       <span class="picked-meta">${esc(c.code)}</span>
       <button type="button" class="btn btn-quiet btn-sm" aria-label="Cambiar libro">${icon("x")}</button></div>`;
@@ -400,7 +410,7 @@ function paintCopySlot() {
   slot.innerHTML = `<input class="line-input hand" id="l-copy" placeholder="título o código" aria-labelledby="l-book-label" data-testid="lend-book">`;
   combobox($("#l-copy"), {
     fetcher: (q) => api("GET", `/api/suggest/copies?mode=lend&q=${encodeURIComponent(q)}`),
-    render: (c) => `<span class="forro swatch" ${forroAttrs(c.book_id)}></span>
+    render: (c) => `<span class="forro swatch" ${forroAttrs(c)}></span>
       <span><span class="opt-main">${esc(c.title)}</span> <span class="code">${esc(c.code)}</span><br><span class="opt-sub">${esc(c.author || "")}</span></span>`,
     emptyText: (q) => `No hay ejemplares disponibles de «${q}». Si es un libro nuevo, agregalo en Libros.`,
     onPick: (c) => { desk.copy = c; clearLastResult(); paintCopySlot(); (desk.student ? $("[data-testid=lend-submit]") : $("#l-student"))?.focus(); },
@@ -516,7 +526,7 @@ function wireAsk() {
 
 function loanLines(loans, { showBook = true } = {}) {
   return `<ul class="lines">${loans.map((l) => `<li>
-    ${showBook ? `<span class="forro swatch" ${forroAttrs(l.book_id)} style="width:16px;height:22px;${forro(l.book_id).style}"></span><a href="${bookHref(l.book_id)}"><strong>${esc(l.title)}</strong></a> <span class="code">${esc(l.code)}</span>` : ""}
+    ${showBook ? `<span class="forro swatch" ${forroAttrs(l)} style="width:16px;height:22px;${forro(l).style}"></span><a href="${bookHref(l.book_id)}"><strong>${esc(l.title)}</strong></a> <span class="code">${esc(l.code)}</span>` : ""}
     <span>${loanSentence(l)}</span></li>`).join("")}</ul>`;
 }
 
@@ -545,7 +555,7 @@ function renderAnswer(a) {
       const active = b.copies.filter((c) => !c.archived);
       const lead = b.archived ? "Está archivado." : `${active.length === 1 ? "Tiene 1 ejemplar" : `Tiene ${active.length} ejemplares`}, ${b.available === active.length ? (active.length === 1 ? "está en la biblioteca" : "todos en la biblioteca") : b.available ? `${b.available} en la biblioteca` : "ninguno en la biblioteca"}.`;
       blocks.push(`<div class="answer-block" data-testid="answer-book">
-        <div class="answer-title"><span class="forro swatch" ${forroAttrs(b.id)} style="width:22px;height:30px;${forro(b.id).style}"></span><a href="${bookHref(b.id)}">${esc(b.title)}</a><span class="muted">${esc(b.author)}</span></div>
+        <div class="answer-title"><span class="forro swatch" ${forroAttrs(b)} style="width:22px;height:30px;${forro(b).style}"></span><a href="${bookHref(b.id)}">${esc(b.title)}</a><span class="muted">${esc(b.author)}</span></div>
         <p>${lead}</p>
         <ul class="lines">${active.filter((c) => c.loan).map((c) => `<li><span class="code">${esc(c.code)}</span> <span>${loanSentence(c.loan)}</span></li>`).join("")}</ul>
       </div>`);
@@ -577,7 +587,7 @@ async function viewAtrasados() {
     ${loans.length ? `<div class="table-wrap"><table class="stack-sm" data-testid="overdue-table">
       <thead><tr><th>Libro</th><th>Alumno</th><th class="hide-sm">Clase</th><th>Venció</th><th class="num">Atraso</th><th class="actions"><span class="sr-only">Acciones</span></th></tr></thead>
       <tbody>${loans.map((l) => `<tr class="is-late" data-loan="${l.id}">
-        <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l.book_id)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span></span></div></td>
+        <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span></span></div></td>
         <td><a class="student-link" href="${studentHref(l.student_id)}">${esc(l.student)}</a></td>
         <td class="hide-sm">${esc(l.grade)}</td>
         <td data-label="Venció">${fmtDay(l.due_on)}</td>
@@ -621,7 +631,12 @@ function wireLoanActions(root = main) {
 async function viewLibros(params) {
   loading();
   const showArchived = params.get("archivados") === "1";
-  const [books] = await Promise.all([api("GET", `/api/books${showArchived ? "?archived=1" : ""}`), refreshSummary()]);
+  const [all] = await Promise.all([api("GET", `/api/books${showArchived ? "?archived=1" : ""}`), refreshSummary()]);
+  // ?color=azul|rojo|verde|sin narrows the list to one age band.
+  const want = params.get("color");
+  const books = want ? all.filter((b) => (b.color || "sin") === want) : all;
+  const colorHref = (c) => `#/libros?${new URLSearchParams({ ...(c ? { color: c } : {}), ...(showArchived ? { archivados: "1" } : {}) })}`;
+  const count = (c) => all.filter((b) => (b.color || "sin") === c).length;
   main.innerHTML = `
     <div class="page-head"><div><h1>Libros</h1><p>${plural(books.filter((b) => !b.archived).length, "título", "títulos")} · ${plural(books.reduce((n, b) => n + b.total, 0), "ejemplar", "ejemplares")}</p></div>
       <button type="button" class="btn btn-go" id="add-toggle" aria-expanded="false" data-testid="add-book-toggle">${icon("plus")}Agregar libro</button></div>
@@ -632,20 +647,27 @@ async function viewLibros(params) {
         <label class="field"><span>Autor</span><input class="input" name="author" data-testid="book-author"></label>
         <label class="field"><span>Ejemplares</span><input class="input" name="copies" type="number" min="1" max="200" value="1" data-testid="book-copies"></label>
       </div>
+      ${colorPicks(want && want !== "sin" ? want : "")}
       <label class="field"><span>Códigos (opcional)</span><input class="input" name="codes" placeholder="Si ya tienen etiqueta: B-0101, B-0102. Si no, los numero yo."><small>Separados por coma. Si los dejás vacíos, cada ejemplar recibe el siguiente número libre.</small></label>
       <div id="add-book-msg"></div>
       <div class="row"><button class="btn btn-go" type="submit" data-testid="book-save">${icon("check")}Guardar libro</button><button class="btn btn-quiet" type="button" id="add-cancel">Cancelar</button></div>
     </form>
+    <nav class="chips color-filter" aria-label="Filtrar por color" data-testid="color-filter">
+      <a class="chip" href="${colorHref("")}" ${!want ? 'aria-current="true"' : ""}>Todos</a>
+      ${["azul", "rojo", "verde"].map((c) => `<a class="chip" href="${colorHref(c)}" ${want === c ? 'aria-current="true"' : ""} data-filter="${c}"><span class="dot" style="--c: var(--f-${FORRO_BY_COLOR[c]})"></span>${colorName(c)} <span class="muted">${COLORS[c].replace(" años", "")} · ${count(c)}</span></a>`).join("")}
+      ${count("sin") ? `<a class="chip" href="${colorHref("sin")}" ${want === "sin" ? 'aria-current="true"' : ""} data-filter="sin"><span class="dot" style="--c: var(--f-gris)"></span>Sin color <span class="muted">· ${count("sin")}</span></a>` : ""}
+    </nav>
     <div class="toolbar">
       <label class="input-icon">${icon("search")}<input class="input" id="filter" type="search" placeholder="Filtrar por título, autor o código" aria-label="Filtrar libros"></label>
       <a class="btn btn-quiet" href="#/libros${showArchived ? "" : "?archivados=1"}">${showArchived ? "Ocultar archivados" : "Ver archivados"}</a>
     </div>
     ${books.length ? `<div class="table-wrap"><table data-testid="books-table"><thead><tr><th>Título</th><th class="hide-sm">Autor</th><th>Disponibles</th></tr></thead>
       <tbody>${books.map((b) => `<tr data-hay="${esc((b.title + " " + b.author).toLowerCase())}">
-        <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(b.id)}></span><a href="${bookHref(b.id)}">${esc(b.title)}</a>${b.archived ? ' <span class="pill pill-off">Archivado</span>' : ""}</div></td>
+        <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(b)}></span><a href="${bookHref(b.id)}">${esc(b.title)}</a>${b.archived ? ' <span class="pill pill-off">Archivado</span>' : ""}</div></td>
         <td class="hide-sm">${esc(b.author)}</td>
         <td>${b.total ? `<span class="pill ${b.available ? "pill-ok" : "pill-out"}">${b.available} de ${b.total}</span>` : '<span class="muted">—</span>'}</td>
       </tr>`).join("")}</tbody></table></div>`
+      : want ? `<div class="empty-state"><h3>No hay libros ${want === "sin" ? "sin color" : `de color ${want}`}</h3><p><a href="${colorHref("")}">Ver todos los libros</a></p></div>`
       : `<div class="empty-state"><h3>Todavía no hay libros</h3><p>Agregalos uno por uno con el botón amarillo, o traelos todos juntos de una planilla desde Ajustes.</p></div>`}`;
 
   const form = $("#add-book");
@@ -658,7 +680,7 @@ async function viewLibros(params) {
     const msg = $("#add-book-msg");
     if (!form.title.value.trim()) { msg.innerHTML = `<div class="notice notice-error" role="alert">Falta el título.</div>`; form.title.setAttribute("aria-invalid", "true"); form.title.focus(); return; }
     try {
-      const book = await api("POST", "/api/books", { title: form.title.value, author: form.author.value, copies: form.copies.value, codes: form.codes.value });
+      const book = await api("POST", "/api/books", { title: form.title.value, author: form.author.value, copies: form.copies.value, codes: form.codes.value, color: form.color.value });
       toast(`Agregado: ${book.title} (${book.copies.map((c) => c.code).join(", ")})`);
       location.hash = bookHref(book.id);
     } catch (err) { msg.innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`; }
@@ -683,13 +705,13 @@ async function viewLibro(id) {
   main.innerHTML = `
     <a class="back" href="#/libros">← Libros</a>
     <div class="detail-head">
-      <span class="forro" ${forroAttrs(b.id)}></span>
+      <span class="forro" ${forroAttrs(b)}></span>
       <div><h1>${esc(b.title)}</h1><p class="muted" style="font-size:1.125rem">${esc(b.author)}</p>
-        <div class="stat-line"><span><strong>${b.available}</strong> de ${b.total} en la biblioteca</span><span>Prestado <strong>${plural(b.times_lent, "vez", "veces")}</strong></span>${b.archived ? '<span class="pill pill-off">Archivado</span>' : ""}</div></div>
+        <div class="stat-line"><span data-testid="book-color"><span class="dot" style="--c: var(--f-${forro(b).name})"></span>${b.color ? `<strong>${colorName(b.color)}</strong> · ${COLORS[b.color]}` : "<strong>Sin color</strong> · tocá Editar para ponerle uno"}</span><span><strong>${b.available}</strong> de ${b.total} en la biblioteca</span><span>Prestado <strong>${plural(b.times_lent, "vez", "veces")}</strong></span>${b.archived ? '<span class="pill pill-off">Archivado</span>' : ""}</div></div>
       <div class="btn-col"><button type="button" class="btn btn-line" id="edit-toggle">Editar</button>
         <button type="button" class="btn btn-quiet ${b.archived ? "" : "btn-danger"}" id="archive">${icon("archive")}${b.archived ? "Reactivar" : "Archivar"}</button></div>
     </div>
-    <form class="panel" id="edit-form" hidden><div class="edit-inline">
+    <form class="panel" id="edit-form" hidden>${colorPicks(b.color)}<div class="edit-inline">
       <label class="field"><span>Título</span><input class="input" name="title" value="${esc(b.title)}"></label>
       <label class="field"><span>Autor</span><input class="input" name="author" value="${esc(b.author)}"></label>
       <button class="btn btn-go" type="submit">Guardar</button></div></form>
@@ -710,7 +732,7 @@ async function viewLibro(id) {
   $("#edit-toggle").addEventListener("click", () => { $("#edit-form").hidden = !$("#edit-form").hidden; });
   $("#edit-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    try { await api("PATCH", `/api/books/${id}`, { title: e.target.title.value, author: e.target.author.value }); toast("Guardado."); route(); } catch (err) { fail(err); }
+    try { await api("PATCH", `/api/books/${id}`, { title: e.target.title.value, author: e.target.author.value, color: e.target.color.value }); toast("Guardado."); route(); } catch (err) { fail(err); }
   });
   $("#archive").addEventListener("click", async () => {
     try {
@@ -734,7 +756,7 @@ function historyTable(rows, who, empty) {
   return `<div class="table-wrap"><table class="stack-sm"><thead><tr><th>${who === "student" ? "Alumno" : "Libro"}</th><th>Prestado</th><th>Vuelve / volvió</th><th class="hide-sm">Estado</th></tr></thead><tbody>
     ${rows.map((l) => `<tr>
       <td>${who === "student" ? `<a class="student-link" href="${studentHref(l.student_id)}">${esc(l.student)}</a> <span class="muted">${esc(l.grade)}</span>`
-        : `<div class="book-cell"><span class="forro swatch" ${forroAttrs(l.book_id)} style="width:20px;height:27px;${forro(l.book_id).style}"></span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a> <span class="code">${esc(l.code)}</span></div>`}</td>
+        : `<div class="book-cell"><span class="forro swatch" ${forroAttrs(l)} style="width:20px;height:27px;${forro(l).style}"></span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a> <span class="code">${esc(l.code)}</span></div>`}</td>
       <td data-label="Prestado">${fmtDay(l.lent_on)}</td>
       <td data-label="${l.returned_on ? "Volvió" : "Vuelve"}">${l.returned_on ? fmtDay(l.returned_on) : fmtDay(l.due_on)}</td>
       <td class="hide-sm">${l.open ? (l.overdue ? '<span class="pill pill-late">Atrasado</span>' : '<span class="pill pill-out">Prestado</span>') : '<span class="pill pill-ok">Devuelto</span>'}</td>
@@ -825,7 +847,7 @@ async function viewAlumno(id) {
     <section class="section" aria-labelledby="now-h"><h2 id="now-h">Libros en su poder</h2>
       ${s.loans.length ? `<div class="table-wrap"><table class="stack-sm" data-testid="student-loans"><thead><tr><th>Libro</th><th>Prestado</th><th>Vuelve el</th><th class="actions"></th></tr></thead><tbody>
         ${s.loans.map((l) => `<tr class="${l.overdue ? "is-late" : ""}">
-          <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l.book_id)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span>${l.overdue ? ` <span class="late-days">· ${plural(l.days_late, "día", "días")} de atraso</span>` : ""}</span></div></td>
+          <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span>${l.overdue ? ` <span class="late-days">· ${plural(l.days_late, "día", "días")} de atraso</span>` : ""}</span></div></td>
           <td data-label="Prestado">${fmtDay(l.lent_on)}</td>
           <td data-label="Vuelve"><input class="line-input hand due-edit" value="${fmtDM(l.due_on)}" inputmode="numeric" data-due="${l.id}" aria-label="Fecha de vuelta de ${esc(l.title)}, día y mes"></td>
           <td class="actions"><button type="button" class="btn btn-quiet btn-sm" data-renew="${l.id}">${icon("rotate-cw")}Renovar</button>
@@ -907,10 +929,10 @@ Joaquín Pereira;4°B</pre>
 
       <form class="panel" id="import-books">
         <h2>Cargar libros desde Excel</h2>
-        <p>Columnas: título, autor, ejemplares y, si ya tienen, código. Los repetidos se saltean.</p>
-        <pre class="sample">Titulo;Autor;Ejemplares;Codigo
-Cuentos de la selva;Horacio Quiroga;3;
-Matilda;Roald Dahl;1;B-0040</pre>
+        <p>Columnas: título, autor, ejemplares, color (azul, rojo o verde) y, si ya tienen, código. Los repetidos se saltean.</p>
+        <pre class="sample">Titulo;Autor;Ejemplares;Color;Codigo
+Cuentos de la selva;Horacio Quiroga;3;Rojo;
+Matilda;Roald Dahl;1;Rojo;B-0040</pre>
         <label class="field"><span>Pegá las filas copiadas de Excel o Numbers</span><textarea class="input paste" name="paste" rows="4" placeholder="Matilda	Roald Dahl	1" data-testid="import-books-paste"></textarea></label>
         <label class="file-drop"><span class="field-label">…o elegí la planilla (Excel .xlsx o CSV)</span><input type="file" name="file" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" data-testid="import-books-file"></label>
         <div class="import-msg" aria-live="polite"></div>
@@ -1045,8 +1067,9 @@ async function viewAyuda() {
         "O tocá una pregunta rápida: <strong>Atrasados</strong>, <strong>Prestados hoy</strong>, <strong>Más leídos</strong>.",
       ])}
       ${card("cargar", "plus", "Agregar alumnos y libros", [
-        "De a uno: en <strong>Libros</strong> o <strong>Alumnos</strong>, con el botón amarillo de arriba.",
-        "Todos juntos: en <strong>Ajustes</strong>, elegí la planilla de Excel desde Archivos (o pegá las filas) y tocá <strong>Cargar alumnos</strong> o <strong>Cargar libros</strong>.",
+        "De a uno: en <strong>Libros</strong> o <strong>Alumnos</strong>, con el botón amarillo de arriba. A cada libro elegile su color: <strong>azul</strong> (0 a 7 años), <strong>rojo</strong> (7 a 10) o <strong>verde</strong> (10 a 12).",
+        "Todos juntos: en <strong>Ajustes</strong>, elegí la planilla de Excel desde Archivos (o pegá las filas) y tocá <strong>Cargar alumnos</strong> o <strong>Cargar libros</strong>. Si la planilla de libros tiene una columna <strong>Color</strong>, se usa.",
+        "Los libros sin color se ven grises. En <strong>Libros</strong>, el filtro <strong>Sin color</strong> te muestra cuáles faltan.",
         "Nada se borra: un alumno que se fue se <strong>archiva</strong> desde su página. Si se rompe un ejemplar, en la página del libro tocá <strong>Dar de baja</strong> en su fila. Antes tienen que devolver lo que tengan prestado, y el historial queda.",
       ], ["#/ajustes", "Ir a Ajustes"])}
       ${card("copia", "download", "Guardar una copia de seguridad", [

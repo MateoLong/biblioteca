@@ -90,6 +90,27 @@ try {
   check("persistence", "after closing and reopening, the 9 loans are still there", (await page.$$("[data-testid=loan-tile]")).length === 9);
   await shot("02-mostrador-ipad");
 
+  // ── F1a every place a book is drawn carries its age band: all demo books have one, so nothing may be grey ──
+  const bandAudit = async (where) => {
+    const r = await page.evaluate(() => {
+      const els = [...document.querySelectorAll("#main .forro[data-color], #main .etiqueta")];
+      const bad = els.filter((e) => (e.classList.contains("etiqueta") ? (e.getAttribute("style") || "").includes("gris") : !["azul", "rojo", "verde"].includes(e.dataset.color)));
+      return { n: els.length, bad: bad.length };
+    });
+    check("color", `${where}: every book drawn in its band colour (${r.n} drawn)`, r.n > 0 && r.bad === 0, JSON.stringify(r));
+  };
+  await bandAudit("Mostrador tiles and etiquetas");
+  await page.tap(".chip[data-ask=atrasados]");
+  await page.waitForFunction(() => document.querySelector("[data-testid=answer] .forro"));
+  await bandAudit("Preguntá answer");
+  await page.fill("[data-testid=lend-book]", "a");
+  await page.waitForSelector("[role=option] .forro");
+  await bandAudit("lend suggestions");
+  await go("atrasados");
+  await bandAudit("Atrasados");
+  await go(`alumnos/${studentNamed(await saved(), "Martina López").id}`);
+  await bandAudit("a student's page");
+
   // ── F1b help: the "?" opens Cómo se usa, reads only, and its links lead back to the screens ──
   const beforeHelp = JSON.stringify(await saved());
   await page.tap("[data-testid=help-link]");
@@ -202,6 +223,7 @@ try {
   await page.fill("[data-testid=book-title]", "Corazón");
   await page.fill("[data-testid=book-author]", "Edmundo de Amicis");
   await page.fill("[data-testid=book-copies]", "2");
+  await page.tap("[data-testid=color-verde]");
   await page.tap("[data-testid=book-save]");
   await page.waitForSelector("[data-testid=copies-table]");
   st = await saved();
@@ -209,6 +231,21 @@ try {
   readback.addBook = st.copies.filter((c) => c.book_id === corazon?.id).map((c) => c.code);
   check("add-book", "book saved with 2 numbered copies, not demo", corazon && !corazon.is_demo && readback.addBook.length === 2 && readback.addBook.every((c) => /^B-\d{4}$/.test(c)), JSON.stringify(readback.addBook));
   await shot("08-libro-nuevo");
+  check("color", "new book saved with its age band (verde)", corazon?.color === "verde", corazon?.color);
+  check("color", "its page says Verde · 10 a 12 años and its forro is the green ink",
+    (await page.textContent("[data-testid=book-color]")).includes("Verde · 10 a 12 años")
+    && await page.$eval(".detail-head .forro", (el) => getComputedStyle(el).backgroundColor) === "rgb(33, 128, 74)");
+  await page.tap("#edit-toggle");
+  await page.tap("#edit-form [data-testid=color-rojo]");
+  await page.tap("#edit-form button[type=submit]");
+  await page.waitForFunction(() => document.querySelector("[data-testid=book-color]")?.textContent.includes("Rojo"));
+  check("color", "changing it to rojo is saved", bookTitled(await saved(), "Corazón").color === "rojo");
+  await go("libros?color=rojo");
+  const redRows = await page.$$eval("[data-testid=books-table] tbody .forro", (els) => els.map((e) => e.dataset.color));
+  const wantRed = (await saved()).books.filter((b) => !b.archived && b.color === "rojo").length;
+  check("color", "the Rojo filter lists exactly the red books", redRows.length === wantRed && redRows.every((c) => c === "rojo"), `${redRows.length} shown, ${wantRed} saved`);
+  await shot("08b-libros-rojo");
+  await go(`libros/${corazon.id}`);
   check("hints", "a book nobody took yet says where to lend it", (await page.textContent("[data-testid=history-empty]")).includes("Se presta desde el Mostrador"));
 
   // ── F8 add a student; import by pasting rows (the iPad way) and by file ──
