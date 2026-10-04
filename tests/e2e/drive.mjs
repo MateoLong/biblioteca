@@ -216,6 +216,27 @@ try {
   check("students", "typed '5a' is saved as 5°A", readback.students.includes("Ana Gómez 5°A"), JSON.stringify(readback.students));
   check("students", "pasted rows add 2 and skip the duplicate", imp.includes("Cargué 2 alumnos") && imp.includes("1 ya estaban") && readback.students.length === 3, imp.trim());
   check("books", "CSV file import saves the book", Boolean(bookTitled(st, "Cuentos para chicos")));
+  // Files made by Microsoft Excel itself (tests/fixtures), picked from the iPad's Files app.
+  await page.setInputFiles("[data-testid=import-students-file]", join(ROOT, "tests", "fixtures", "alumnos-excel.xlsx"));
+  await page.tap("#import-students button[type=submit]");
+  // Martina and Joaquín (written "4b") are already in the demo list, so they must be skipped.
+  await page.waitForFunction(() => /Cargué 2 alumnos\. 2 ya estaban/.test(document.querySelector("#import-students [data-testid=import-result]")?.textContent || ""));
+  await page.setInputFiles("[data-testid=import-books-file]", join(ROOT, "tests", "fixtures", "libros-excel.xlsx"));
+  await page.tap("#import-books button[type=submit]");
+  // Cuentos de la selva and Matilda (same author) already exist; only El "Principito" is new.
+  await page.waitForFunction(() => /Cargué 1 libro\. 2 ya estaban/.test(document.querySelector("#import-books [data-testid=import-result]")?.textContent || ""));
+  st = await saved();
+  readback.xlsx = { nandu: studentNamed(st, "Ñandú O'Neil & Pérez")?.grade, sofia: studentNamed(st, "Sofía <la de 6>")?.grade,
+    principito: st.copies.filter((c) => c.book_id === bookTitled(st, 'El "Principito"')?.id).length,
+    martinas: st.students.filter((x) => x.name === "Martina López").length };
+  check("xlsx", "Excel students file saved with tidy classes", readback.xlsx.nandu === "5°A" && readback.xlsx.sofia === "6°", JSON.stringify(readback.xlsx));
+  check("xlsx", "Excel books file: copies from the number cell; existing books and students not duplicated", readback.xlsx.principito === 2 && readback.xlsx.martinas === 1, JSON.stringify(readback.xlsx));
+  const [notXlsx] = [join(EVIDENCE, "no-es-excel.xlsx")];
+  writeFileSync(notXlsx, "esto no es una planilla");
+  await page.setInputFiles("[data-testid=import-students-file]", notXlsx);
+  await page.tap("#import-students button[type=submit]");
+  await page.waitForSelector("#import-students .notice-error");
+  check("xlsx", "a broken .xlsx gets a clear Spanish message", (await page.textContent("#import-students .notice-error")).includes("no es una planilla de Excel"));
   await shot("09-ajustes-import");
 
   // ── F9 edit a due date as dd/mm on the student page ──
@@ -256,7 +277,7 @@ try {
   await page.waitForSelector("[data-testid=demo-strip][hidden]", { state: "attached" });
   st = await saved();
   readback.afterClear = { demo: st.books.filter((b) => b.is_demo).length + st.students.filter((s) => s.is_demo).length, books: st.books.length, students: st.students.length, loans: st.loans.length };
-  check("clear-demo", "only demo rows are gone; real books and 3 real students stay", JSON.stringify(readback.afterClear) === '{"demo":0,"books":2,"students":3,"loans":0}', JSON.stringify(readback.afterClear));
+  check("clear-demo", "only demo rows are gone; the 3 real books and 5 real students stay", JSON.stringify(readback.afterClear) === '{"demo":0,"books":3,"students":5,"loans":0}', JSON.stringify(readback.afterClear));
   await page.evaluate(() => { globalThis.BIBLIO_TODAY = "2026-10-12"; location.hash = "#/atrasados"; });
   await page.evaluate(() => { location.hash = "#/mostrador"; });
   await page.waitForTimeout(300);

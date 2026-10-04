@@ -1,6 +1,7 @@
 /* Biblioteca: the whole front end. Hash routes, one view per section.
    Data lives on this device; local-api.js answers the same routes a server would. */
 import { start, call, download, flushed } from "./local-api.js";
+import { readXlsx } from "./xlsx.js";
 
 // ── small helpers ─────────────────────────────────────────────────────
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -898,7 +899,7 @@ async function viewAjustes() {
 Martina López;4°B
 Joaquín Pereira;4°B</pre>
         <label class="field"><span>Pegá las filas copiadas de Excel o Numbers</span><textarea class="input paste" name="paste" rows="4" placeholder="Martina López	4°B" data-testid="import-students-paste"></textarea></label>
-        <label class="file-drop"><span class="field-label">…o elegí un archivo CSV</span><input type="file" name="file" accept=".csv,.txt,text/csv" data-testid="import-students-file"></label>
+        <label class="file-drop"><span class="field-label">…o elegí la planilla (Excel .xlsx o CSV)</span><input type="file" name="file" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" data-testid="import-students-file"></label>
         <div class="import-msg" aria-live="polite"></div>
         <div><button class="btn btn-go" type="submit">${icon("upload")}Cargar alumnos</button></div>
       </form>
@@ -910,7 +911,7 @@ Joaquín Pereira;4°B</pre>
 Cuentos de la selva;Horacio Quiroga;3;
 Matilda;Roald Dahl;1;B-0040</pre>
         <label class="field"><span>Pegá las filas copiadas de Excel o Numbers</span><textarea class="input paste" name="paste" rows="4" placeholder="Matilda	Roald Dahl	1" data-testid="import-books-paste"></textarea></label>
-        <label class="file-drop"><span class="field-label">…o elegí un archivo CSV</span><input type="file" name="file" accept=".csv,.txt,text/csv" data-testid="import-books-file"></label>
+        <label class="file-drop"><span class="field-label">…o elegí la planilla (Excel .xlsx o CSV)</span><input type="file" name="file" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" data-testid="import-books-file"></label>
         <div class="import-msg" aria-live="polite"></div>
         <div><button class="btn btn-go" type="submit">${icon("upload")}Cargar libros</button></div>
       </form>
@@ -941,7 +942,10 @@ Matilda;Roald Dahl;1;B-0040</pre>
       const pasted = e.target.paste.value;
       if (!file && !pasted.trim()) { msg.innerHTML = `<div class="notice notice-error" role="alert">Pegá las filas o elegí un archivo primero.</div>`; return; }
       try {
-        const res = await api("POST", `/api/import/${kind}`, { text: file ? await file.text() : pasted });
+        const body = !file ? { text: pasted }
+          : /\.xlsx$/i.test(file.name) ? { rows: await readXlsx(await file.arrayBuffer()) }
+          : { text: await file.text() };
+        const res = await api("POST", `/api/import/${kind}`, body);
         msg.innerHTML = `<div class="notice ${res.errors.length ? "notice-warn" : "notice-ok"}" data-testid="import-result"><p>Cargué ${plural(res.added, one, many)}.${res.skipped ? ` ${res.skipped} ya estaban.` : ""}</p>
           ${res.errors.length ? `<ul class="lines">${res.errors.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`;
         e.target.reset();

@@ -99,7 +99,8 @@ const ROUTES = [
     return registry.student(id);
   }],
   ["PATCH", /^\/api\/settings$/, (q, b) => registry.updateSettings(b)],
-  ["POST", /^\/api\/import\/(books|students)$/, (q, b, kind) => registry.importCsv(kind, b.text || "")],
+  ["POST", /^\/api\/import\/(books|students)$/, (q, b, kind) =>
+    (Array.isArray(b.rows) ? registry.importRows(kind, b.rows) : registry.importCsv(kind, b.text || ""))],
   ["POST", /^\/api\/restore$/, (q, b) => registry.restore(b.text || "")],
   ["POST", /^\/api\/demo$/, () => registry.loadDemo(DEMO)],
   ["DELETE", /^\/api\/demo$/, () => registry.clearDemo()],

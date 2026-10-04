@@ -486,13 +486,19 @@ export class Registry {
    * Skips rows that already exist; a bad row is reported and never half-saved.
    */
   importCsv(kind, text) {
-    const rows = readCsv(text);
-    if (!rows.length) throw new RegistryError("invalid", "El archivo está vacío.");
-    let header = rows[0].map(norm);
+    return this.importRows(kind, readCsv(text));
+  }
+
+  /** Same as importCsv, for rows already read from a spreadsheet (e.g. an .xlsx). */
+  importRows(kind, rows) {
+    rows = (rows || []).map((r) => (r || []).map((c) => String(c ?? "")));
+    const top = rows.findIndex((r) => r.some((c) => c.trim()));
+    if (top < 0) throw new RegistryError("invalid", "El archivo está vacío.");
+    let header = rows[top].map(norm);
     const known = new Set(["titulo", "autor", "ejemplares", "codigo", "codigos", "nombre", "clase", "grado", "grupo"]);
     let body, firstLine;
-    if (header.some((h) => known.has(h))) { body = rows.slice(1); firstLine = 2; }
-    else { header = kind === "books" ? ["titulo", "autor", "ejemplares", "codigo"] : ["nombre", "clase"]; body = rows; firstLine = 1; }
+    if (header.some((h) => known.has(h))) { body = rows.slice(top + 1); firstLine = top + 2; }
+    else { header = kind === "books" ? ["titulo", "autor", "ejemplares", "codigo"] : ["nombre", "clase"]; body = rows.slice(top); firstLine = top + 1; }
     const col = new Map(header.map((h, i) => [h, i]));
     const get = (row, ...names) => { for (const n of names) if (col.has(n) && col.get(n) < row.length) return String(row[col.get(n)]).trim(); return ""; };
     let added = 0, skipped = 0;
@@ -505,7 +511,7 @@ export class Registry {
           if (this.state.books.some((b) => norm(b.title) === norm(title) && norm(b.author) === norm(author))) { skipped++; return; }
           const codes = get(row, "codigo", "codigos").split(/[\s,|/]+/).filter(Boolean);
           const n = get(row, "ejemplares");
-          this.addBook(title, author, /^\d+$/.test(n) ? Number(n) : 1, codes);
+          this.addBook(title, author, /^\d+(\.0+)?$/.test(n) ? Number(n) : 1, codes);
         } else if (kind === "students") {
           const name = get(row, "nombre"), grade = get(row, "clase", "grado", "grupo");
           if (this.state.students.some((s) => norm(s.name) === norm(name) && gradeKey(s.grade) === gradeKey(grade))) { skipped++; return; }
