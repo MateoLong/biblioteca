@@ -57,7 +57,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
 body {
   margin: 0;
   background: var(--ground);
@@ -96,7 +96,7 @@ input { caret-color: var(--moña); }
 .band-inner {
   max-width: 1280px; margin: 0 auto;
   display: flex; align-items: center; gap: 28px;
-  padding: 10px 24px;
+  padding: calc(10px + env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 10px max(24px, env(safe-area-inset-left));
 }
 .brand { display: flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; min-width: 0; }
 .brand:hover { color: #fff; }
@@ -438,7 +438,7 @@ pre.sample { margin: 0; background: var(--ground); border-radius: var(--r-sm); p
   .settings { grid-template-columns: 1fr; }
 }
 @media (max-width: 860px) {
-  .band-inner { flex-wrap: wrap; gap: 8px; padding: 10px 16px 8px; }
+  .band-inner { flex-wrap: wrap; gap: 8px; padding: calc(10px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left)); }
   .brand-name { font-size: 1.3125rem; }
   .brand-mark { width: 36px; height: 36px; }
   .tabs { margin-left: 0; width: 100%; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; }
@@ -491,3 +491,7 @@ pre.sample { margin: 0; background: var(--ground); border-radius: var(--r-sm); p
 }
 
 #lend-notice:not(:empty), #return-notice:not(:empty) { margin-top: 14px; }
+
+.backup-nudge { margin-bottom: 20px; grid-template-columns: 1fr auto; align-items: center; }
+@media (max-width: 860px) { .backup-nudge { grid-template-columns: 1fr; } }
+textarea.paste { min-height: 96px; resize: vertical; font-size: 1rem; }

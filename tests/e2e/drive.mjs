@@ -1,21 +1,23 @@
 // verify-biblioteca: Launch → Doctor → Drive → Evidence → Cleanup.
-// Drives the real UI in Chromium against a fresh database and reads every side effect back from SQLite.
+// Drives the real app in WebKit (Safari's engine) at iPad sizes with touch, and reads every
+// change back from what the page saved on the device (IndexedDB).
 // Usage: npm run verify   (from tests/e2e)   → evidence in .verify/evidence/<stamp>/
-import { chromium } from "playwright";
-import { spawn, execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { webkit } from "playwright";
+import { createServer } from "node:http";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { join, dirname, extname, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const STATIC = join(ROOT, "app", "static");
 const STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const EVIDENCE = join(ROOT, ".verify", "evidence", STAMP);
-const DB = join(ROOT, ".verify", "tmp", `verify-${STAMP}.db`);
 const PORT = 8811;
 const BASE = `http://localhost:${PORT}`;
 const TODAY = "2026-10-03"; // fixed so due dates and lateness are deterministic
+const IPAD_LANDSCAPE = { viewport: { width: 1180, height: 820 }, hasTouch: true, deviceScaleFactor: 1 };
+const IPAD_PORTRAIT = { viewport: { width: 820, height: 1180 }, hasTouch: true, deviceScaleFactor: 1 };
 mkdirSync(EVIDENCE, { recursive: true });
-mkdirSync(dirname(DB), { recursive: true });
 
 const results = [];
 const readback = {};
@@ -25,85 +27,90 @@ function check(flow, claim, ok, detail = "") {
   if (!ok) failed++;
   console.log(`${ok ? "PASS" : "FAIL"}  [${flow}] ${claim}${detail ? ` — ${detail}` : ""}`);
 }
-const sql = (query) =>
-  JSON.parse(execFileSync("python3", ["-c",
-    "import sqlite3,json,sys;c=sqlite3.connect(sys.argv[1]);c.row_factory=sqlite3.Row;print(json.dumps([dict(r) for r in c.execute(sys.argv[2])]))",
-    DB, query]).toString());
 const addDays = (iso, n) => new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
 
-// ── Launch ──
-const server = spawn("python3", [join(ROOT, "app", "server.py")], {
-  env: { ...process.env, BIBLIO_DB: DB, BIBLIO_PORT: String(PORT), BIBLIO_NO_BROWSER: "1", BIBLIO_TODAY: TODAY },
-  stdio: ["ignore", "pipe", "pipe"],
+// ── Launch: a plain static server, like any web host ──
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
+  ".woff2": "font/woff2", ".webmanifest": "application/manifest+json", ".json": "application/json" };
+const server = createServer((req, res) => {
+  const path = normalize(decodeURIComponent(new URL(req.url, BASE).pathname)).replace(/^(\.\.[/\\])+/, "");
+  const file = join(STATIC, path === "/" ? "index.html" : path);
+  if (!file.startsWith(STATIC) || !existsSync(file)) { res.writeHead(404); return res.end("not found"); }
+  res.writeHead(200, { "Content-Type": TYPES[extname(file)] || "application/octet-stream" });
+  res.end(readFileSync(file));
 });
-let serverLog = "";
-server.stdout.on("data", (d) => (serverLog += d));
-server.stderr.on("data", (d) => (serverLog += d));
-const cleanup = () => { try { server.kill(); } catch {} };
-process.on("exit", cleanup);
+await new Promise((r) => server.listen(PORT, r));
 
-async function waitUp() {
-  for (let i = 0; i < 50; i++) {
-    try { const r = await fetch(`${BASE}/api/summary`); if (r.ok) return true; } catch {}
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  return false;
-}
-
+const browsers = [];
 try {
   // ── Doctor ──
-  check("doctor", "server answers /api/summary", await waitUp(), serverLog.trim());
-  const idx = await fetch(BASE + "/");
-  check("doctor", "page is served", idx.ok && (await idx.text()).includes("app.js"));
-  const font = await fetch(BASE + "/fonts/PatrickHand-400.woff2");
-  check("doctor", "fonts are served locally (no internet needed)", font.ok && font.headers.get("content-type") === "font/woff2");
-  check("doctor", "database starts empty", sql("SELECT COUNT(*) n FROM books")[0].n === 0);
+  for (const f of ["index.html", "app.js", "registry.js", "local-api.js", "sw.js", "manifest.webmanifest", "apple-touch-icon.png", "fonts/PatrickHand-400.woff2"]) {
+    const r = await fetch(`${BASE}/${f}`);
+    check("doctor", `${f} is served`, r.ok, r.status);
+  }
+  const manifest = await (await fetch(`${BASE}/manifest.webmanifest`)).json();
+  check("doctor", "manifest makes it a standalone Home Screen app", manifest.display === "standalone" && manifest.icons.length >= 2);
 
-  const browser = await chromium.launch();
+  const wk = await webkit.launch();
+  browsers.push(wk);
   const consoleErrors = [];
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  page.on("pageerror", (e) => consoleErrors.push(e.message));
-  // 409 is the API's normal "needs confirmation" answer; Chromium logs it as a failed resource.
-  page.on("console", (m) => m.type() === "error" && !m.text().includes("status of 409") && consoleErrors.push(m.text()));
-  const shot = (name, full = true) => page.screenshot({ path: join(EVIDENCE, `${name}.png`), fullPage: full });
-  const go = async (hash) => { await page.goto(`${BASE}/#/${hash}`); await page.waitForLoadState("networkidle"); };
+  const newIpad = async (opts = IPAD_LANDSCAPE) => {
+    const ctx = await wk.newContext({ ...opts, acceptDownloads: true });
+    await ctx.addInitScript((d) => { globalThis.BIBLIO_TODAY = d; }, TODAY);
+    const p = await ctx.newPage();
+    p.on("pageerror", (e) => consoleErrors.push(e.message));
+    p.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
+    return { ctx, page: p };
+  };
+  const { ctx, page } = await newIpad();
+  const shot = (name, full = true, p = page) => p.screenshot({ path: join(EVIDENCE, `${name}.png`), fullPage: full });
+  const go = async (hash, p = page) => { await p.goto(`${BASE}/#/${hash}`); await p.waitForSelector("#main > *"); await p.waitForTimeout(150); };
+  // What is actually stored on the device, after every pending write has finished.
+  const saved = (p = page) => p.evaluate(() => globalThis.__biblio.saved());
+  const openLoans = (st) => st.loans.filter((l) => l.returned_on == null);
+  const studentNamed = (st, name) => st.students.find((s) => s.name === name);
+  const bookTitled = (st, title) => st.books.find((b) => b.title === title);
+  const copyOf = (st, id) => st.copies.find((c) => c.id === id);
 
-  // ── F1 first run → demo data ──
+  // ── F1 first run → demo data, survives a reload ──
   await go("mostrador");
   check("first-run", "empty library shows the welcome state", await page.isVisible("[data-testid=first-run]"));
   await shot("01-first-run");
-  await page.click("[data-action=load-demo]");
+  await page.tap("[data-action=load-demo]");
   await page.waitForSelector("[data-testid=demo-strip]:not([hidden])");
-  const badge = await page.textContent("[data-testid=overdue-count]");
-  readback.demo = sql("SELECT (SELECT COUNT(*) FROM books WHERE is_demo=1) books, (SELECT COUNT(*) FROM students WHERE is_demo=1) students, (SELECT COUNT(*) FROM loans WHERE returned_on IS NULL) open_loans, (SELECT COUNT(*) FROM loans WHERE returned_on IS NULL AND due_on < '" + TODAY + "') overdue")[0];
-  check("first-run", "demo data loaded (12 books, 15 students, 9 out, 3 late)", readback.demo.books === 12 && readback.demo.students === 15 && readback.demo.open_loans === 9 && readback.demo.overdue === 3, JSON.stringify(readback.demo));
-  check("first-run", "header badge shows 3 overdue", badge.trim() === "3", badge);
+  let st = await saved();
+  readback.demo = { books: st.books.filter((b) => b.is_demo).length, students: st.students.filter((s) => s.is_demo).length,
+    open: openLoans(st).length, overdue: openLoans(st).filter((l) => l.due_on < TODAY).length };
+  check("first-run", "demo data saved on the device (12 books, 15 students, 9 out, 3 late)", JSON.stringify(readback.demo) === '{"books":12,"students":15,"open":9,"overdue":3}', JSON.stringify(readback.demo));
+  check("first-run", "header badge shows 3 overdue", (await page.textContent("[data-testid=overdue-count]")).trim() === "3");
+  await page.reload();
   await page.waitForSelector("[data-testid=loan-tile]");
-  check("first-run", "9 loan tiles on the counter", (await page.$$("[data-testid=loan-tile]")).length === 9);
-  await shot("02-mostrador-desktop");
+  check("persistence", "after closing and reopening, the 9 loans are still there", (await page.$$("[data-testid=loan-tile]")).length === 9);
+  await shot("02-mostrador-ipad");
 
-  // ── F2 lend by typing ──
+  // ── F2 lend: tap a suggestion with a finger, Enter for the book ──
   await page.fill("[data-testid=lend-student]", "agus");
   await page.waitForSelector("#l-student-list li[data-i]");
-  await page.keyboard.press("Enter");
+  await page.tap("#l-student-list li[data-i]");
+  check("lend", "tapping a suggestion picks the student", (await page.textContent("[data-testid=picked-student]").catch(() => "")).includes("Agustina Silva"));
   await page.fill("[data-testid=lend-book]", "principito");
   await page.waitForSelector("#l-copy-list li[data-i]");
   await page.keyboard.press("Enter");
-  await page.click("[data-testid=lend-submit]");
+  check("lend", "the Vuelve line shows dd/mm and its weekday", (await page.inputValue("[data-testid=lend-due]")) === "17/10" && (await page.textContent("#l-due-day")) === "sábado");
+  await page.tap(".due-chips .chip[data-days='7']");
+  check("lend", "'1 semana' chip sets 10/10", (await page.inputValue("[data-testid=lend-due]")) === "10/10");
+  await page.tap(".due-chips .chip[data-days='14']");
+  await page.tap("[data-testid=lend-submit]");
   await page.waitForSelector("[data-testid=lend-result]");
   await page.waitForTimeout(1400); // let the label finish writing itself
-  const resultText = await page.textContent("[data-testid=lend-result]");
   await shot("03-lent-signature", false);
-  readback.lend = sql("SELECT s.name, b.title, c.code, l.lent_on, l.due_on FROM loans l JOIN students s ON s.id=l.student_id JOIN copies c ON c.id=l.copy_id JOIN books b ON b.id=c.book_id WHERE s.name='Agustina Silva' AND l.returned_on IS NULL");
-  check("lend", "result shows student and book", resultText.includes("Agustina Silva") && resultText.includes("El Principito"), resultText.replace(/\s+/g, " ").slice(0, 120));
-  check("lend", "DB has the open loan, due in 14 days", readback.lend.length === 1 && readback.lend[0].title === "El Principito" && readback.lend[0].due_on === addDays(TODAY, 14), JSON.stringify(readback.lend));
+  st = await saved();
+  const agus = studentNamed(st, "Agustina Silva");
+  const lent = openLoans(st).filter((l) => l.student_id === agus.id);
+  readback.lend = lent.map((l) => ({ code: copyOf(st, l.copy_id).code, lent_on: l.lent_on, due_on: l.due_on }));
   const lentCode = readback.lend[0]?.code;
-  check("lend", "focus is back on the student field for the next child", await page.evaluate(() => document.activeElement?.dataset.testid === "lend-student"));
-
-  check("lend", "the Vuelve line shows dd/mm and its weekday", (await page.inputValue("[data-testid=lend-due]")) === "17/10" && (await page.textContent("#l-due-day")) === "sábado", await page.inputValue("[data-testid=lend-due]"));
-  await page.click(".due-chips .chip[data-days='7']");
-  check("lend", "'1 semana' chip sets 10/10", (await page.inputValue("[data-testid=lend-due]")) === "10/10");
-  await page.click(".due-chips .chip[data-days='14']");
+  check("lend", "saved: Agustina has El Principito, due in 14 days", lent.length === 1 && copyOf(st, lent[0].copy_id).book_id === bookTitled(st, "El Principito").id && lent[0].due_on === addDays(TODAY, 14), JSON.stringify(readback.lend));
+  check("lend", "focus is back on Nombre for the next child", await page.evaluate(() => document.activeElement?.dataset.testid === "lend-student"));
 
   // ── F3 limit warns, override works ──
   for (const book of ["matilda", "mafalda"]) {
@@ -113,51 +120,48 @@ try {
     await page.fill("[data-testid=lend-book]", book);
     await page.waitForSelector("#l-copy-list li[data-i]");
     await page.keyboard.press("Enter");
-    await page.click("[data-testid=lend-submit]");
+    await page.tap("[data-testid=lend-submit]");
     await page.waitForSelector("[data-testid=lend-result], [data-testid=lend-warning]");
   }
   const warn = await page.textContent("[data-testid=lend-warning]").catch(() => "");
-  check("limit", "third book shows the limit warning", warn.includes("ya tiene 2 libros"), warn.trim());
+  check("limit", "third book shows the limit warning", warn.includes("ya tiene 2 libros"), warn.trim().split("\n")[0]);
   await shot("04-limit-warning", false);
-  check("limit", "nothing was written before confirming", sql("SELECT COUNT(*) n FROM loans l JOIN students s ON s.id=l.student_id WHERE s.name='Agustina Silva' AND returned_on IS NULL")[0].n === 2);
-  await page.click("text=Prestar igual");
+  check("limit", "nothing saved before confirming", openLoans(await saved()).filter((l) => l.student_id === agus.id).length === 2);
+  await page.tap("text=Prestar igual");
   await page.waitForSelector("[data-testid=lend-result]");
-  readback.limit = sql("SELECT COUNT(*) n FROM loans l JOIN students s ON s.id=l.student_id WHERE s.name='Agustina Silva' AND returned_on IS NULL")[0];
-  check("limit", "'Prestar igual' writes the third loan", readback.limit.n === 3, JSON.stringify(readback.limit));
+  check("limit", "'Prestar igual' saves the third loan", openLoans(await saved()).filter((l) => l.student_id === agus.id).length === 3);
 
   // ── F4 return with a scanner-style code + Enter, then undo ──
-  await page.click("#tab-return");
+  await page.tap("#tab-return");
   await page.fill("[data-testid=return-input]", lentCode);
   await page.keyboard.press("Enter");
   await page.waitForSelector("[data-testid=return-result]");
   await shot("05-returned", false);
-  let row = sql(`SELECT l.id, l.returned_on FROM loans l JOIN copies c ON c.id=l.copy_id WHERE c.code='${lentCode}' ORDER BY l.id DESC LIMIT 1`)[0];
-  check("return", "scanning the code + Enter returns it", row.returned_on === TODAY, JSON.stringify(row));
-  await page.click(".toast .btn");
-  await page.waitForTimeout(500);
-  row = sql(`SELECT returned_on FROM loans WHERE id=${row.id}`)[0];
-  check("return", "Deshacer reopens the loan", row.returned_on === null, JSON.stringify(row));
-  readback.undo = row;
+  st = await saved();
+  const back = st.loans.filter((l) => copyOf(st, l.copy_id).code === lentCode).pop();
+  check("return", "scanning the code + Enter saves the return", back.returned_on === TODAY, JSON.stringify(back));
+  await page.tap(".toast .btn");
+  await page.waitForTimeout(300);
+  readback.undo = (await saved()).loans.find((l) => l.id === back.id);
+  check("return", "Deshacer reopens the loan", readback.undo.returned_on === null);
 
   // ── F5 questions ──
   await go("mostrador");
   await page.fill("[data-testid=ask-input]", "¿Quién tiene Matilda?");
   await page.waitForSelector("[data-testid=answer-book]");
   let answer = await page.textContent("[data-testid=answer]");
-  check("ask", "'¿Quién tiene Matilda?' names who has each copy", answer.includes("Martina López") && answer.includes("Agustina Silva"), answer.replace(/\s+/g, " ").slice(0, 160));
+  check("ask", "'¿Quién tiene Matilda?' names who has each copy", answer.includes("Martina López") && answer.includes("Agustina Silva"), answer.replace(/\s+/g, " ").slice(0, 120));
   await shot("06-ask-who-has", false);
   await page.fill("[data-testid=ask-input]", "joaquin");
   await page.waitForSelector("[data-testid=answer-student]");
   answer = await page.textContent("[data-testid=answer]");
-  check("ask", "student name (no accent) answers what they have", answer.includes("Joaquín Pereira") && answer.includes("Cuentos de la selva"), answer.replace(/\s+/g, " ").slice(0, 160));
-  await page.click(".chip[data-ask='4°B']");
+  check("ask", "student name without accent answers what they have", answer.includes("Joaquín Pereira") && answer.includes("Cuentos de la selva"));
+  await page.tap(".chip[data-ask='4°B']");
   await page.waitForFunction(() => document.querySelector("[data-testid=answer]").textContent.includes("4°B:"));
-  answer = await page.textContent("[data-testid=answer]");
-  check("ask", "class chip summarises 4°B", /4°B: 3 alumnos, \d+ libros prestados/.test(answer), answer.replace(/\s+/g, " ").slice(0, 120));
-  await page.click(".chip[data-ask='atrasados']");
+  check("ask", "class chip summarises 4°B", /4°B: 3 alumnos, \d+ libros prestados/.test(await page.textContent("[data-testid=answer]")));
+  await page.tap(".chip[data-ask='atrasados']");
   await page.waitForFunction(() => document.querySelector("[data-testid=answer]").textContent.includes("atrasados"));
-  answer = await page.textContent("[data-testid=answer]");
-  check("ask", "'Atrasados' chip lists 3 late books", answer.includes("Hay 3 libros atrasados"), answer.replace(/\s+/g, " ").slice(0, 120));
+  check("ask", "'Atrasados' chip lists 3 late books", (await page.textContent("[data-testid=answer]")).includes("Hay 3 libros atrasados"));
   await page.fill("[data-testid=ask-input]", "zzzz");
   await page.waitForFunction(() => document.querySelector("[data-testid=answer]").textContent.includes("No encontré"));
   check("ask", "no match explains what to try", (await page.textContent("[data-testid=answer]")).includes("Probá con"));
@@ -165,117 +169,156 @@ try {
   // ── F6 overdue page: oldest first, renew ──
   await go("atrasados");
   await page.waitForSelector("[data-testid=overdue-table]");
-  const dues = await page.$$eval("[data-testid=overdue-table] tbody tr", (rows) => rows.map((r) => r.dataset.loan));
-  const expected = sql(`SELECT id FROM loans WHERE returned_on IS NULL AND due_on < '${TODAY}' ORDER BY due_on`).map((r) => String(r.id));
-  check("overdue", "table lists the late loans, oldest first", JSON.stringify(dues) === JSON.stringify(expected), `${dues} vs ${expected}`);
-  await shot("07-atrasados-desktop");
-  await page.click(`tr[data-loan="${dues[0]}"] [data-renew]`);
-  await page.waitForTimeout(500);
-  readback.renew = sql(`SELECT due_on FROM loans WHERE id=${dues[0]}`)[0];
-  check("overdue", "Renovar gives 14 more days from today", readback.renew.due_on === addDays(TODAY, 14), JSON.stringify(readback.renew));
+  const rows = await page.$$eval("[data-testid=overdue-table] tbody tr", (trs) => trs.map((r) => r.dataset.loan));
+  st = await saved();
+  const expected = openLoans(st).filter((l) => l.due_on < TODAY).sort((a, b) => (a.due_on < b.due_on ? -1 : 1)).map((l) => String(l.id));
+  check("overdue", "late loans listed oldest first", JSON.stringify(rows) === JSON.stringify(expected), `${rows} vs ${expected}`);
+  await shot("07-atrasados");
+  await page.tap(`tr[data-loan="${rows[0]}"] [data-renew]`);
+  await page.waitForTimeout(300);
+  readback.renew = (await saved()).loans.find((l) => l.id === Number(rows[0])).due_on;
+  check("overdue", "Renovar gives 14 more days from today", readback.renew === addDays(TODAY, 14), readback.renew);
   check("overdue", "badge drops to 2", (await page.textContent("[data-testid=overdue-count]")).trim() === "2");
-
-  check("toasts", "never more than 3 toasts on screen", (await page.$$(".toast")).length <= 3);
 
   // ── F7 add a book ──
   await go("libros");
-  await page.click("[data-testid=add-book-toggle]");
+  await page.tap("[data-testid=add-book-toggle]");
   await page.fill("[data-testid=book-title]", "Corazón");
   await page.fill("[data-testid=book-author]", "Edmundo de Amicis");
   await page.fill("[data-testid=book-copies]", "2");
-  await page.click("[data-testid=book-save]");
+  await page.tap("[data-testid=book-save]");
   await page.waitForSelector("[data-testid=copies-table]");
-  readback.addBook = sql("SELECT b.title, b.is_demo, c.code FROM books b JOIN copies c ON c.book_id=b.id WHERE b.title='Corazón'");
-  check("add-book", "book saved with 2 numbered copies, not marked demo", readback.addBook.length === 2 && readback.addBook.every((r) => /^B-\d{4}$/.test(r.code) && r.is_demo === 0), JSON.stringify(readback.addBook));
+  st = await saved();
+  const corazon = bookTitled(st, "Corazón");
+  readback.addBook = st.copies.filter((c) => c.book_id === corazon?.id).map((c) => c.code);
+  check("add-book", "book saved with 2 numbered copies, not demo", corazon && !corazon.is_demo && readback.addBook.length === 2 && readback.addBook.every((c) => /^B-\d{4}$/.test(c)), JSON.stringify(readback.addBook));
   await shot("08-libro-nuevo");
 
-  // ── F8 add a student and import a CSV ──
+  // ── F8 add a student; import by pasting rows (the iPad way) and by file ──
   await go("alumnos");
-  await page.click("[data-testid=add-student-toggle]");
+  await page.tap("[data-testid=add-student-toggle]");
   await page.fill("[data-testid=student-name]", "Ana Gómez");
   await page.fill("[data-testid=student-grade]", "5a");
-  await page.click("[data-testid=student-save]");
+  await page.tap("[data-testid=student-save]");
   await page.waitForFunction(() => document.body.textContent.includes("Ana Gómez"));
   await go("ajustes");
-  const csvPath = join(dirname(DB), "alumnos.csv");
-  writeFileSync(csvPath, "Nombre;Clase\nPedro Ruiz;1°A\nLola Vega;1°A\nAna Gómez;5°A\n");
-  await page.setInputFiles("[data-testid=import-students-file]", csvPath);
-  await page.click("#import-students button[type=submit]");
-  await page.waitForSelector("[data-testid=import-result]");
-  const imp = await page.textContent("[data-testid=import-result]");
-  readback.students = sql("SELECT name, grade, is_demo FROM students WHERE is_demo=0 ORDER BY name");
-  check("students", "typed '5a' is stored as 5°A", readback.students.some((s) => s.name === "Ana Gómez" && s.grade === "5°A"), JSON.stringify(readback.students));
-  check("students", "CSV import adds 2 and skips the duplicate", imp.includes("Cargué 2 alumnos") && imp.includes("1 ya estaban") && readback.students.length === 3, imp.trim());
+  await page.fill("[data-testid=import-students-paste]", "Pedro Ruiz\t1°A\nLola Vega\t1°A\nAna Gómez\t5°A");
+  await page.tap("#import-students button[type=submit]");
+  await page.waitForSelector("#import-students [data-testid=import-result]");
+  const imp = await page.textContent("#import-students [data-testid=import-result]");
+  const csvPath = join(EVIDENCE, "libros.csv");
+  writeFileSync(csvPath, "Titulo;Autor;Ejemplares\nCuentos para chicos;Roy Berocay;1\n");
+  await page.setInputFiles("[data-testid=import-books-file]", csvPath);
+  await page.tap("#import-books button[type=submit]");
+  await page.waitForSelector("#import-books [data-testid=import-result]");
+  st = await saved();
+  readback.students = st.students.filter((s) => !s.is_demo).map((s) => `${s.name} ${s.grade}`).sort();
+  check("students", "typed '5a' is saved as 5°A", readback.students.includes("Ana Gómez 5°A"), JSON.stringify(readback.students));
+  check("students", "pasted rows add 2 and skip the duplicate", imp.includes("Cargué 2 alumnos") && imp.includes("1 ya estaban") && readback.students.length === 3, imp.trim());
+  check("books", "CSV file import saves the book", Boolean(bookTitled(st, "Cuentos para chicos")));
   await shot("09-ajustes-import");
 
-  // ── F9 edit a due date on the student page ──
-  const martina = sql("SELECT id FROM students WHERE name='Martina López'")[0].id;
-  await go(`alumnos/${martina}`);
+  // ── F9 edit a due date as dd/mm on the student page ──
+  await go(`alumnos/${studentNamed(st, "Martina López").id}`);
   await page.waitForSelector("[data-testid=student-loans]");
   const dueInput = page.locator("[data-testid=student-loans] input[data-due]").first();
-  const loanId = await dueInput.getAttribute("data-due");
-  check("due-date", "due dates read as dd/mm", /^\d{2}\/\d{2}$/.test(await dueInput.inputValue()), await dueInput.inputValue());
+  const loanId = Number(await dueInput.getAttribute("data-due"));
   await dueInput.fill("30/10");
-  await dueInput.dispatchEvent("change");
-  await page.waitForTimeout(500);
-  readback.setDue = sql(`SELECT due_on FROM loans WHERE id=${loanId}`)[0];
-  check("due-date", "changing the date on the student page saves it", readback.setDue.due_on === "2026-10-30", JSON.stringify(readback.setDue));
+  await dueInput.press("Tab");
+  await page.waitForTimeout(400);
+  readback.setDue = (await saved()).loans.find((l) => l.id === loanId).due_on;
+  check("due-date", "typing 30/10 saves 2026-10-30", readback.setDue === "2026-10-30", readback.setDue);
+  check("due-date", "one save, one toast", (await page.$$eval(".toast", (ts) => ts.filter((t) => t.textContent.includes("Nueva fecha")).length)) === 1);
   await shot("10-alumno-detalle");
 
-  // ── F10 exports ──
-  // Read raw bytes: fetch().text() would silently strip the BOM that Excel needs.
-  const csvBytes = Buffer.from(await (await fetch(`${BASE}/api/export/loans`)).arrayBuffer());
-  const csv = csvBytes.toString("utf8");
-  check("export", "loans CSV opens in Excel (BOM, ';', Spanish header)", csvBytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])) && csv.includes("Código;Libro;Autor;Alumno;Clase"), csv.slice(1, 60));
-  const backup = Buffer.from(await (await fetch(`${BASE}/api/export/backup`)).arrayBuffer());
-  check("export", "backup is a real SQLite file", backup.subarray(0, 15).toString() === "SQLite format 3", `${backup.length} bytes`);
-
-  // ── F11 clear demo keeps real data ──
+  // ── F10 files: Excel export, backup, restore onto an empty iPad ──
   await go("ajustes");
-  await page.click(".settings [data-action=clear-demo]");
-  await page.waitForSelector("[data-testid=demo-strip][hidden]", { state: "attached" });
-  readback.afterClear = sql("SELECT (SELECT COUNT(*) FROM books WHERE is_demo=1)+(SELECT COUNT(*) FROM students WHERE is_demo=1) demo, (SELECT COUNT(*) FROM books) books, (SELECT COUNT(*) FROM students) students, (SELECT COUNT(*) FROM loans) loans")[0];
-  check("clear-demo", "only demo rows are gone; Corazón and the 3 real students stay", readback.afterClear.demo === 0 && readback.afterClear.books === 1 && readback.afterClear.students === 3 && readback.afterClear.loans === 0, JSON.stringify(readback.afterClear));
+  const [csvDl] = await Promise.all([page.waitForEvent("download"), page.tap("[data-download=loans]")]);
+  const csvBytes = readFileSync(await csvDl.path());
+  check("export", "Préstamos file opens in Excel (BOM, ';', Spanish header)", csvBytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])) && csvBytes.toString("utf8").includes("Código;Libro;Autor;Alumno;Clase"), csvDl.suggestedFilename());
+  const [bkDl] = await Promise.all([page.waitForEvent("download"), page.tap("[data-testid=backup]")]);
+  const backupPath = join(EVIDENCE, bkDl.suggestedFilename());
+  await bkDl.saveAs(backupPath);
+  await page.waitForSelector("[data-testid=last-backup]:has-text('hoy')");
+  check("backup", "backup file is named by date and Ajustes says 'Última copia: hoy'", bkDl.suggestedFilename() === `biblioteca-copia-${TODAY}.json`, bkDl.suggestedFilename());
+  const fresh = await newIpad();
+  await go("ajustes", fresh.page);
+  await fresh.page.setInputFiles("[data-testid=restore-file]", backupPath);
+  await fresh.page.tap("#restore button[type=submit]");
+  await fresh.page.waitForSelector("[data-testid=loan-tile]");
+  const [orig, restored] = [await saved(), await saved(fresh.page)];
+  readback.restore = { books: restored.books.length, students: restored.students.length, loans: restored.loans.length, open: openLoans(restored).length };
+  check("backup", "restoring the file on an empty iPad brings back every book, student and loan", orig.books.length === restored.books.length && orig.students.length === restored.students.length && JSON.stringify(orig.loans) === JSON.stringify(restored.loans), JSON.stringify(readback.restore));
+  await fresh.ctx.close();
 
-  // ── Mobile pass (390px) over every screen, with demo data back ──
-  await fetch(`${BASE}/api/demo`, { method: "POST" });
-  const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
-  phone.on("pageerror", (e) => consoleErrors.push("mobile: " + e.message));
-  const bookId = sql("SELECT id FROM books WHERE title='Matilda'")[0].id;
-  const studentId = sql("SELECT id FROM students WHERE name='Martina López'")[0].id;
-  for (const r of ["mostrador", "atrasados", "libros", `libros/${bookId}`, "alumnos", `alumnos/${studentId}`, "ajustes"]) {
-    await phone.goto(`${BASE}/#/${r}`);
-    await phone.waitForLoadState("networkidle");
-    const sw = await phone.evaluate(() => document.documentElement.scrollWidth);
-    check("mobile", `#/${r} fits 390px without sideways scrolling`, sw <= 390, `scrollWidth ${sw}`);
-    await phone.screenshot({ path: join(EVIDENCE, `m-${r.replace("/", "-")}.png`), fullPage: true });
+  // ── F11 clear demo keeps real data; the backup reminder appears ──
+  await page.tap(".settings [data-action=clear-demo]");
+  await page.waitForSelector("[data-testid=demo-strip][hidden]", { state: "attached" });
+  st = await saved();
+  readback.afterClear = { demo: st.books.filter((b) => b.is_demo).length + st.students.filter((s) => s.is_demo).length, books: st.books.length, students: st.students.length, loans: st.loans.length };
+  check("clear-demo", "only demo rows are gone; real books and 3 real students stay", JSON.stringify(readback.afterClear) === '{"demo":0,"books":2,"students":3,"loans":0}', JSON.stringify(readback.afterClear));
+  await page.evaluate(() => { globalThis.BIBLIO_TODAY = "2026-10-12"; location.hash = "#/atrasados"; });
+  await page.evaluate(() => { location.hash = "#/mostrador"; });
+  await page.waitForTimeout(300);
+  check("backup", "9 days after the last copy, the counter reminds her to save one", await page.isVisible("[data-testid=backup-nudge]"));
+
+  // ── Offline: once opened, it works without internet ──
+  await page.reload();
+  await page.waitForTimeout(800);
+  const swReady = await page.evaluate(() => Promise.race([navigator.serviceWorker?.ready.then(() => true), new Promise((r) => setTimeout(() => r(false), 4000))]));
+  // Take the web host away entirely (Playwright's simulated offline mode trips WebKit itself).
+  await new Promise((r) => { server.close(r); server.closeAllConnections(); });
+  let offlineOk = false;
+  try { await page.reload(); await page.waitForSelector("[data-testid=loan-tile], [data-testid=first-run], .tiles, .empty-state", { timeout: 5000 }); offlineOk = true; } catch {}
+  check("offline", "with the website unreachable, the app still opens with her data", swReady && offlineOk, `service worker ready: ${swReady}, reloaded offline: ${offlineOk}`);
+  await new Promise((r) => server.listen(PORT, r));
+
+  // ── Layout: every screen at iPad portrait (820) and the smallest iPad (744) ──
+  const demoCtx = await newIpad(IPAD_PORTRAIT);
+  await go("mostrador", demoCtx.page);
+  await demoCtx.page.tap("[data-action=load-demo]");
+  await demoCtx.page.waitForSelector("[data-testid=loan-tile]");
+  const ds = await saved(demoCtx.page);
+  const routes = ["mostrador", "atrasados", "libros", `libros/${bookTitled(ds, "Matilda").id}`, "alumnos", `alumnos/${studentNamed(ds, "Martina López").id}`, "ajustes"];
+  for (const width of [820, 744]) {
+    await demoCtx.page.setViewportSize({ width, height: 1180 });
+    for (const r of routes) {
+      await go(r, demoCtx.page);
+      const sw = await demoCtx.page.evaluate(() => document.documentElement.scrollWidth);
+      check("layout", `#/${r} fits ${width}px portrait`, sw <= width, `scrollWidth ${sw}`);
+      if (width === 820) await shot(`p-${r.replace("/", "-")}`, true, demoCtx.page);
+    }
   }
   for (const r of ["mostrador", "atrasados", "libros", "alumnos", "ajustes"]) {
     await go(r);
     const sw = await page.evaluate(() => document.documentElement.scrollWidth);
-    check("desktop", `#/${r} fits 1440px`, sw <= 1440, `scrollWidth ${sw}`);
-  }
-  // Impeccable review captures
-  mkdirSync(join(ROOT, ".impeccable", "review"), { recursive: true });
-  // Fresh pages, no leftover toasts, tiles rendered: a valid capture of the first screen.
-  const openLoans = sql("SELECT COUNT(*) n FROM loans WHERE returned_on IS NULL")[0].n;
-  for (const [file, width, height] of [["desktop.png", 1440, 900], ["mobile.png", 390, 844]]) {
-    const fresh = await browser.newPage({ viewport: { width, height } });
-    await fresh.goto(`${BASE}/#/mostrador`);
-    await fresh.waitForFunction((n) => document.querySelectorAll("[data-testid=loan-tile]").length === n && !document.querySelector(".toast"), openLoans);
-    await fresh.waitForTimeout(300);
-    await fresh.screenshot({ path: join(ROOT, ".impeccable", "review", file), fullPage: true });
-    await fresh.close();
+    check("layout", `#/${r} fits 1180px landscape`, sw <= 1180, `scrollWidth ${sw}`);
   }
 
-  check("console", "no JavaScript errors in any flow", consoleErrors.length === 0, consoleErrors.join(" | "));
-  await browser.close();
+  // Impeccable review captures: fresh pages, no toasts, tiles rendered.
+  mkdirSync(join(ROOT, ".impeccable", "review"), { recursive: true });
+  const want = openLoans(await saved(demoCtx.page)).length;
+  for (const [file, opts] of [["desktop.png", IPAD_LANDSCAPE], ["mobile.png", IPAD_PORTRAIT]]) {
+    const p = await demoCtx.ctx.newPage();
+    await p.setViewportSize(opts.viewport);
+    await p.goto(`${BASE}/#/mostrador`);
+    await p.waitForFunction((n) => document.querySelectorAll("[data-testid=loan-tile]").length === n && !document.querySelector(".toast"), want);
+    await p.waitForTimeout(300);
+    await p.screenshot({ path: join(ROOT, ".impeccable", "review", file), fullPage: true });
+    await p.close();
+  }
+  await demoCtx.ctx.close();
+
+  // 409 is the normal "needs confirmation" answer; nothing else may appear.
+  const real = consoleErrors.filter((e) => !/status of 409/.test(e));
+  check("console", "no JavaScript errors in any flow", real.length === 0, real.join(" | "));
 } catch (err) {
   check("harness", "drive completed", false, err.stack || err.message);
 } finally {
   // ── Evidence ── (cleanup never deletes evidence)
-  writeFileSync(join(EVIDENCE, "results.json"), JSON.stringify({ stamp: STAMP, today: TODAY, db: DB, failed, results, readback }, null, 2));
-  cleanup();
+  writeFileSync(join(EVIDENCE, "results.json"), JSON.stringify({ stamp: STAMP, today: TODAY, failed, results, readback }, null, 2));
+  for (const b of browsers) await b.close().catch(() => {});
+  server.close();
   console.log(`\n${results.length - failed}/${results.length} checks passed. Evidence: ${EVIDENCE}`);
   process.exit(failed ? 1 : 0);
 }

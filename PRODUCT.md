@@ -10,11 +10,11 @@ web
 
 ## Stack
 
-delegated: Python 3 standard library (http.server + sqlite3) serving vanilla HTML/CSS/JS, no build step, no dependencies. Chosen so it runs offline on a school Mac/PC with nothing to install. *(inferred)*
+delegated: static web app (vanilla HTML/CSS/JS, no build step) installed to the iPad Home Screen; data in the browser's IndexedDB on that iPad; service worker for offline use; backups as JSON files. Chosen because the librarian's only device is an iPad (owner, confirmed 2026-10-03). The first version (Python + SQLite) was replaced for that reason.
 
 ## Users
 
-One school librarian (the owner's mother) at the library desk, operating it during recess and class visits while children queue at the counter. Children see the screen but do not operate it. *(inferred: only she operates it)*
+One school librarian (the owner's mother) at the library desk, on an **iPad with Safari** (confirmed), operating it during recess and class visits while children queue at the counter. Children see the screen but do not operate it. *(inferred: only she operates it)*
 
 ## Product Purpose
 
@@ -37,7 +37,7 @@ A registry built for one school library desk, not a library management system: n
 - Lend, return, undo a return, edit a due date.
 - Questions: who has a book; what a student has; overdue list; a book's history; a student's history; class view; most-read.
 - Books and students are archived, never deleted, so history survives.
-- Full history kept forever. Single SQLite file; one-click CSV backup.
+- Full history kept forever. Data only on her iPad, with weekly backup files and a reminder.
 - Offline only, single user, no login. Spanish UI, dd/mm dates.
 - No AI or network calls: children's data stays on the machine.
 
@@ -59,4 +59,4 @@ No real catalogue or student list yet. Any demo data is synthetic and must be la
 
 ## Accessibility & Inclusion
 
-Large tap/click targets and readable type for a non-technical adult user; WCAG AA contrast. Works with a USB barcode scanner as keyboard input.
+Large tap/click targets and readable type for a non-technical adult user; WCAG AA contrast. Touch-first (iPad); works with a Bluetooth barcode scanner as keyboard input.

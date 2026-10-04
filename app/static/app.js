@@ -1,5 +1,6 @@
-/* Biblioteca: the whole front end. Hash routes, one view per section. */
-"use strict";
+/* Biblioteca: the whole front end. Hash routes, one view per section.
+   Data lives on this device; local-api.js answers the same routes a server would. */
+import { start, call, download, flushed } from "./local-api.js";
 
 // ── small helpers ─────────────────────────────────────────────────────
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -15,23 +16,15 @@ class ApiError extends Error {
 }
 
 async function api(method, path, body) {
-  let res;
   try {
-    res = await fetch(path, {
-      method,
-      headers: body ? { "Content-Type": "application/json" } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new ApiError({ error: "No hay conexión con la biblioteca. ¿Se cerró la ventana negra? Volvé a abrir la app." }, 0);
+    return await call(method, path, body);
+  } catch (err) {
+    throw new ApiError(err.data || { error: "Algo salió mal." }, err.status || 500);
   }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data, res.status);
-  return data;
 }
 
 // Dates arrive as ISO "2026-10-17"; she reads them as 17/10.
-// Local date (not UTC) until the server answers with its own.
+// Local date (not UTC) until the registry answers with its own.
 let TODAY = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const dayDiff = (iso) => Math.round((Date.parse(iso) - Date.parse(TODAY)) / 86400000);
 function fmtDay(iso) {
@@ -175,11 +168,14 @@ function combobox(input, { fetcher, render, onPick, emptyText }) {
       close();
     }
   });
-  list.addEventListener("mousedown", (e) => {
+  // Keep focus in the field while choosing (desktop); the pick itself happens on click,
+  // which is also what a finger tap on the iPad produces.
+  list.addEventListener("mousedown", (e) => e.preventDefault());
+  list.addEventListener("click", (e) => {
     const li = e.target.closest("li[data-i]");
     if (li) { e.preventDefault(); pick(Number(li.dataset.i)); }
   });
-  input.addEventListener("blur", () => setTimeout(close, 120));
+  input.addEventListener("blur", () => setTimeout(close, 300));
   return { close };
 }
 
@@ -232,7 +228,7 @@ async function viewMostrador(params) {
   const empty = !summary.books && !summary.students;
   main.innerHTML = `
     <h1 class="sr-only">Mostrador</h1>
-    ${empty ? firstRun() : ""}
+    ${empty ? firstRun() : backupNudge()}
     <div class="desk">
       <section class="counter" aria-label="Préstamos y devoluciones">
         <div class="switch" role="tablist" aria-label="Qué hacer">
@@ -265,10 +261,27 @@ async function viewMostrador(params) {
     </section>`;
 
   $$(".switch button").forEach((b) => b.addEventListener("click", () => { desk.mode = b.dataset.mode; viewMostrador(new URLSearchParams()); }));
+  $("[data-testid=backup-nudge] [data-download]")?.addEventListener("click", async () => {
+    const name = download("backup");
+    await flushed();
+    toast(`Listo: ${name} quedó en Descargas (app Archivos).`);
+    viewMostrador(new URLSearchParams());
+  });
   renderCounter();
   wireAsk();
   renderOut();
   wireFirstRun();
+}
+
+// Everything lives only on this iPad, so a weekly copy is the safety net.
+function backupNudge() {
+  if (summary.has_demo) return "";
+  const days = summary.last_backup ? -dayDiff(summary.last_backup) : null;
+  if (days !== null && days < 7) return "";
+  return `<div class="notice notice-warn backup-nudge" data-testid="backup-nudge">
+    <p>${days === null ? "Todavía no guardaste ninguna copia de seguridad." : `Hace ${plural(days, "día", "días")} que no guardás una copia de seguridad.`} Todo está solo en este iPad.</p>
+    <div class="row"><button type="button" class="btn btn-go btn-sm" data-download="backup">${icon("download")}Guardar copia ahora</button></div>
+  </div>`;
 }
 
 function firstRun() {
@@ -490,13 +503,13 @@ function wireAsk() {
   const input = $("#ask-q");
   let t;
   const run = async (q) => {
-    $$(".chips .chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.ask === q)));
+    $$(".chip[data-ask]").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.ask === q)));
     if (!q.trim()) { $("#answer").innerHTML = ""; return; }
     try { renderAnswer(await api("GET", `/api/ask?q=${encodeURIComponent(q)}`)); } catch (err) { fail(err); }
   };
   input.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => run(input.value), 220); });
   $("#ask-form").addEventListener("submit", (e) => { e.preventDefault(); clearTimeout(t); run(input.value); });
-  $$(".chips .chip").forEach((c) => c.addEventListener("click", () => { input.value = c.dataset.ask; run(c.dataset.ask); }));
+  $$(".chip[data-ask]").forEach((c) => c.addEventListener("click", () => { input.value = c.dataset.ask; run(c.dataset.ask); }));
 }
 
 function loanLines(loans, { showBook = true } = {}) {
@@ -853,24 +866,39 @@ async function viewAjustes() {
       </form>
 
       <div class="panel">
-        <h2>Copias y planillas</h2>
-        <p>Descargá todo para abrir en Excel, o una copia completa para guardar en un pendrive.</p>
+        <h2>Copia de seguridad</h2>
+        <p>Todo se guarda <strong>solo en este iPad</strong>. Guardá una copia una vez por semana: queda en la app Archivos y desde ahí la podés mandar por mail o a Drive.</p>
+        <p data-testid="last-backup">${summary.last_backup ? `Última copia: <strong>${fmtRel(summary.last_backup) === fmtDay(summary.last_backup) ? "el " + fmtDay(summary.last_backup) : fmtRel(summary.last_backup)}</strong>.` : "<strong>Todavía no guardaste ninguna copia.</strong>"}</p>
         <div class="btn-col">
-          <a class="btn btn-line" href="/api/export/loans" download>${icon("download")}Préstamos (Excel)</a>
-          <a class="btn btn-line" href="/api/export/books" download>${icon("download")}Libros (Excel)</a>
-          <a class="btn btn-line" href="/api/export/students" download>${icon("download")}Alumnos (Excel)</a>
-          <a class="btn btn-go" href="/api/export/backup" download data-testid="backup">${icon("download")}Copia de seguridad completa</a>
+          <button type="button" class="btn btn-go" data-download="backup" data-testid="backup">${icon("download")}Guardar copia de seguridad</button>
         </div>
-        <p class="muted" style="font-size:.9375rem">Todo se guarda en la carpeta <strong>datos</strong>, en el archivo <strong>biblioteca.db</strong>. Para recuperar una copia, reemplazá ese archivo con la copia que descargaste, con la app cerrada.</p>
+        <form id="restore" class="file-drop">
+          <span class="field-label">Recuperar una copia</span>
+          <input type="file" name="file" accept=".json,application/json" data-testid="restore-file">
+          <small class="muted">Reemplaza todo lo que hay ahora por lo que tenía la copia.</small>
+          <div class="restore-msg" aria-live="polite"></div>
+          <div><button class="btn btn-line" type="submit">${icon("upload")}Recuperar</button></div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <h2>Planillas para Excel</h2>
+        <p>Listas para abrir en Excel o Numbers, imprimir o mandar a la dirección.</p>
+        <div class="btn-col">
+          <button type="button" class="btn btn-line" data-download="loans">${icon("download")}Préstamos</button>
+          <button type="button" class="btn btn-line" data-download="books">${icon("download")}Libros</button>
+          <button type="button" class="btn btn-line" data-download="students">${icon("download")}Alumnos</button>
+        </div>
       </div>
 
       <form class="panel" id="import-students">
         <h2>Cargar alumnos desde Excel</h2>
-        <p>En Excel: <em>Archivo → Guardar como → CSV</em>. Dos columnas: nombre y clase.</p>
+        <p>Dos columnas: nombre y clase. Lo más fácil: seleccioná las filas en Excel o Numbers, copiá y pegá acá.</p>
         <pre class="sample">Nombre;Clase
 Martina López;4°B
 Joaquín Pereira;4°B</pre>
-        <label class="file-drop"><span class="field-label">Archivo CSV</span><input type="file" name="file" accept=".csv,.txt,text/csv" data-testid="import-students-file"></label>
+        <label class="field"><span>Pegá las filas copiadas de Excel o Numbers</span><textarea class="input paste" name="paste" rows="4" placeholder="Martina López	4°B" data-testid="import-students-paste"></textarea></label>
+        <label class="file-drop"><span class="field-label">…o elegí un archivo CSV</span><input type="file" name="file" accept=".csv,.txt,text/csv" data-testid="import-students-file"></label>
         <div class="import-msg" aria-live="polite"></div>
         <div><button class="btn btn-go" type="submit">${icon("upload")}Cargar alumnos</button></div>
       </form>
@@ -881,7 +909,8 @@ Joaquín Pereira;4°B</pre>
         <pre class="sample">Titulo;Autor;Ejemplares;Codigo
 Cuentos de la selva;Horacio Quiroga;3;
 Matilda;Roald Dahl;1;B-0040</pre>
-        <label class="file-drop"><span class="field-label">Archivo CSV</span><input type="file" name="file" accept=".csv,.txt,text/csv" data-testid="import-books-file"></label>
+        <label class="field"><span>Pegá las filas copiadas de Excel o Numbers</span><textarea class="input paste" name="paste" rows="4" placeholder="Matilda	Roald Dahl	1" data-testid="import-books-paste"></textarea></label>
+        <label class="file-drop"><span class="field-label">…o elegí un archivo CSV</span><input type="file" name="file" accept=".csv,.txt,text/csv" data-testid="import-books-file"></label>
         <div class="import-msg" aria-live="polite"></div>
         <div><button class="btn btn-go" type="submit">${icon("upload")}Cargar libros</button></div>
       </form>
@@ -909,9 +938,10 @@ Matilda;Roald Dahl;1;B-0040</pre>
       e.preventDefault();
       const msg = $(".import-msg", e.target);
       const file = e.target.file.files[0];
-      if (!file) { msg.innerHTML = `<div class="notice notice-error" role="alert">Elegí el archivo primero.</div>`; return; }
+      const pasted = e.target.paste.value;
+      if (!file && !pasted.trim()) { msg.innerHTML = `<div class="notice notice-error" role="alert">Pegá las filas o elegí un archivo primero.</div>`; return; }
       try {
-        const res = await api("POST", `/api/import/${kind}`, { text: await file.text() });
+        const res = await api("POST", `/api/import/${kind}`, { text: file ? await file.text() : pasted });
         msg.innerHTML = `<div class="notice ${res.errors.length ? "notice-warn" : "notice-ok"}" data-testid="import-result"><p>Cargué ${plural(res.added, one, many)}.${res.skipped ? ` ${res.skipped} ya estaban.` : ""}</p>
           ${res.errors.length ? `<ul class="lines">${res.errors.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`;
         e.target.reset();
@@ -919,6 +949,25 @@ Matilda;Roald Dahl;1;B-0040</pre>
       } catch (err) { msg.innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`; }
     });
   }
+  $$("[data-download]").forEach((b) => b.addEventListener("click", async () => {
+    try {
+      const name = download(b.dataset.download);
+      await flushed();
+      toast(`Listo: ${name} quedó en Descargas (app Archivos).`);
+      if (b.dataset.download === "backup") viewAjustes();
+    } catch (err) { fail(err); }
+  }));
+  $("#restore").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = $(".restore-msg", e.target);
+    const file = e.target.file.files[0];
+    if (!file) { msg.innerHTML = `<div class="notice notice-error" role="alert">Elegí el archivo de la copia primero.</div>`; return; }
+    try {
+      const res = await api("POST", "/api/restore", { text: await file.text() });
+      toast(`Copia recuperada: ${plural(res.books, "libro", "libros")}, ${plural(res.students, "alumno", "alumnos")}.`);
+      location.hash = "#/mostrador";
+    } catch (err) { msg.innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`; }
+  });
   wireFirstRun();
 }
 
@@ -963,4 +1012,14 @@ window.addEventListener("hashchange", () => {
   lastSection = section;
   route();
 });
-route();
+
+start({ saveError: () => toast("No pude guardar en este iPad. Guardá una copia de seguridad desde Ajustes.", { error: true, ms: 15000 }) })
+  .then(route)
+  .catch(() => {
+    main.innerHTML = `<div class="empty-state"><h3>No pude abrir la biblioteca</h3><p>Safari no deja guardar datos. Revisá que no estés en navegación privada.</p></div>`;
+  });
+
+// Works without internet once opened: the service worker keeps a copy of the app.
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}

@@ -4,7 +4,7 @@ How we decide a change works. Adapted from poteto's [pstack](https://github.com/
 
 ## 1. Prove it on the real thing
 
-- Run the app, drive the screen, read the row back from SQLite. "It compiles" or "the agent says it works" is not evidence.
+- Run the app, drive the screen, read the saved data back from the device storage. "It compiles" or "the agent says it works" is not evidence.
 - Every claim carries a label: **measured** (ran it, saw it), **inferred** (read the code), or **guess**.
 - A check that could not run is **inconclusive**, and inconclusive is not a pass.
 
@@ -12,17 +12,17 @@ How we decide a change works. Adapted from poteto's [pstack](https://github.com/
 
 | Change | Check |
 |---|---|
-| Registry logic (`app/registry.py`) | `python3 -m unittest discover -s tests` |
-| UI or a flow | `npm run verify` in `tests/e2e` (drives Chromium at 1440 and 390 px, reads every write back from SQLite, saves screenshots) |
+| Registry logic (`app/static/registry.js`) | `npm test` |
+| UI or a flow | `npm run verify` in `tests/e2e` (drives WebKit, Safari's engine, at iPad landscape 1180 and portrait 820/744 with touch; reads every write back from IndexedDB; reload, backup→restore and offline checks; saves screenshots) |
 | Bug fix | Reproduce it first; add the failing check before the fix |
 
 ## 3. Tests that can fail
 
-Before keeping a test, ask: would it still pass if the code under it returned nothing? If yes, rewrite it. Spot-check by mutating the code (e.g. make `days_late` always 0) and confirming a test goes red.
+Before keeping a test, ask: would it still pass if the code under it returned nothing? If yes, rewrite it. Spot-check by mutating the code (e.g. make `daysLate` always 0) and confirming a test goes red.
 
 ## 4. The `verify-biblioteca` skill
 
-`.claude/skills/verify-biblioteca/SKILL.md`: **Launch** a server on a fresh DB with a fixed date → **Doctor** (server answers, fonts local, DB empty) → **Drive** every flow in `features/` → **Evidence** (screenshots + `results.json` with SQL read-backs in `.verify/evidence/<stamp>/`) → **Cleanup** (stop the server; evidence is never deleted).
+`.claude/skills/verify-biblioteca/SKILL.md`: **Launch** a static server, fresh browser storage, fixed date → **Doctor** (every file served, manifest valid) → **Drive** every flow in `features/` → **Evidence** (screenshots + `results.json` with IndexedDB read-backs in `.verify/evidence/<stamp>/`) → **Cleanup** (stop the server; evidence is never deleted).
 
 ## 5. Done means
 
@@ -30,4 +30,4 @@ Unit tests green, `npm run verify` green, and an independent agent (one that did
 
 ## 6. Always pause for a human
 
-Anything that touches the real `datos/biblioteca.db` on the school computer, deleting non-demo data, or changing how backups are written.
+Publishing or changing the public address, anything that could wipe data on her iPad (e.g. changing the storage key or the backup format without a migration), deleting non-demo data.
