@@ -1,0 +1,4 @@
+# Día del préstamo
+Path: Mostrador → Prestar → Prestado (today by default; Hoy / Ayer, or type 30/09). On a student's page, the Prestado cell of a book they have can be retyped.
+End state: the loan is saved with lent_on = that day and due_on = Vuelve, which follows Prestado when it moves (same length). The Prestado day stays for the next child until it is changed or the day ends. Retyping Prestado on the student's page changes only lent_on.
+Edge: a day typed without a year is the nearest one, this year or last (30/09 typed in October is this September; 18/12 typed in January is last December, shown as "de 2026"). If the nearest one is still ahead (05/10 typed on 03/10) it is refused, not moved a year back. After the due date or after the return is refused. If the app stayed open into a new day, nothing is saved with the old day: the dates go back to today and she is told.

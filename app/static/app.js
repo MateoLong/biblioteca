@@ -2,7 +2,7 @@
    Data lives on this device; local-api.js answers the same routes a server would. */
 import { start, call, download, flushed } from "./local-api.js";
 import { readXlsx } from "./xlsx.js";
-import { COLORS } from "./registry.js";
+import { COLORS, typedDay } from "./registry.js";
 
 // ── small helpers ─────────────────────────────────────────────────────
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -45,19 +45,14 @@ function fmtRel(iso) {
 const fmtDM = (iso) => { const [, m, d] = iso.split("-"); return `${d}/${m}`; };
 const WEEKDAYS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 const weekday = (iso) => WEEKDAYS[new Date(`${iso}T12:00:00`).getDay()];
-// "17/10", "17-10", "17/10/2027" -> ISO. Without a year, a date already past means next year.
-function parseDM(text) {
-  const m = String(text).trim().match(/^(\d{1,2})\s*[\/\-.]\s*(\d{1,2})(?:\s*[\/\-.]\s*(\d{2}|\d{4}))?$/);
-  if (!m) return null;
-  const d = Number(m[1]), mo = Number(m[2]);
-  let y = m[3] ? Number(m[3].length === 2 ? "20" + m[3] : m[3]) : Number(TODAY.slice(0, 4));
-  const iso = (yy) => `${yy}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  const ok = (s) => { const t = new Date(`${s}T12:00:00`); return t.getDate() === d && t.getMonth() + 1 === mo; };
-  if (!ok(iso(y))) return null;
-  if (!m[3] && iso(y) < TODAY) y += 1;
-  return iso(y);
-}
+// What she types as 17/10 -> ISO (registry.js typedDay has the rules); null when it is not a day.
+const parseDM = (text, opts = {}) => typedDay(text, TODAY, { from: TODAY, ...opts });
 const addDays = (iso, n) => new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
+const daysFrom = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+// "hoy", "ayer", or the weekday: how she says when something happened.
+// The year only shows when it is not this one, so 18/12 of last year never passes for this year's.
+const dayName = (iso) => `${weekday(iso)}${iso.slice(0, 4) !== TODAY.slice(0, 4) ? ` de ${iso.slice(0, 4)}` : ""}`;
+const dayWord = (iso) => (iso === TODAY ? "hoy" : iso === addDays(TODAY, -1) ? "ayer" : dayName(iso));
 
 // A book's forro colour is its age band, like the sticker on the real book; grey until she sets one.
 // The print comes from the id, so two books of the same band still look different.
@@ -229,7 +224,7 @@ function loading(rows = 3) {
 }
 
 // ══ MOSTRADOR ══════════════════════════════════════════════════════════
-const desk = { mode: "lend", student: null, copy: null };
+const desk = { mode: "lend", student: null, copy: null, dates: null };
 
 async function viewMostrador(params) {
   await refreshSummary();
@@ -316,18 +311,19 @@ function wireFirstRun() {
 function renderCounter() {
   const body = $("#counter-body");
   if (desk.mode === "lend") {
-    const due = addDays(TODAY, summary.settings.loan_days);
+    // The lent day stays put between children (she may be writing down a whole earlier day);
+    // the return date starts over from it each time.
+    desk.dates = loanDates(desk.dates, false);
     body.innerHTML = `
       <form id="lend-form" class="label-form forro" data-print="stars" style="--c: var(--f-cobalto)" novalidate>
         <div class="etiqueta etiqueta-form" style="--c: var(--f-cobalto)">
           <div class="label-row combo"><span class="label-key" id="l-student-label">Nombre</span><div id="student-slot"></div></div>
           <div class="label-row combo"><span class="label-key" id="l-book-label">Libro</span><div id="copy-slot"></div></div>
+          <div class="label-row"><label class="label-key" for="l-lent">Prestado</label>
+            <div class="due-line">${lentField("l-lent", desk.dates)}</div>
+          </div>
           <div class="label-row"><label class="label-key" for="l-due">Vuelve</label>
-            <div class="due-line">
-              <input class="line-input hand due-input" id="l-due" value="${fmtDM(due)}" inputmode="numeric" autocomplete="off" aria-describedby="l-due-day" data-testid="lend-due">
-              <span class="due-day" id="l-due-day">${weekday(due)}</span>
-              <span class="chips due-chips" aria-label="Plazos rápidos">${[7, 14, 21].map((d) => `<button type="button" class="chip chip-sm" data-days="${d}" aria-pressed="${d === summary.settings.loan_days}">${d / 7} ${d === 7 ? "semana" : "semanas"}</button>`).join("")}</span>
-            </div>
+            <div class="due-line">${dueField("l-due", desk.dates)}</div>
           </div>
         </div>
         <button class="btn btn-go btn-big" type="submit" data-testid="lend-submit">${icon("check")}Prestar</button>
@@ -335,7 +331,7 @@ function renderCounter() {
       <div id="lend-notice"></div>`;
     paintStudentSlot();
     paintCopySlot();
-    wireDueLine($("#l-due"), $("#l-due-day"), $$(".due-chips .chip"));
+    wireDates($("#lend-form"), desk.dates);
     $("#lend-form").addEventListener("submit", (e) => { e.preventDefault(); doLend(false); });
   } else {
     body.innerHTML = `
@@ -359,16 +355,62 @@ function renderCounter() {
   }
 }
 
-// The "Vuelve" line: typed as dd/mm, with quick 1/2/3-week picks and the weekday spelled out.
-function wireDueLine(input, dayEl, chips) {
-  const sync = () => {
-    const iso = parseDM(input.value);
-    dayEl.textContent = iso ? weekday(iso) : "escribila como 17/10";
-    input.setAttribute("aria-invalid", String(!iso));
-    chips.forEach((c) => c.setAttribute("aria-pressed", String(iso === addDays(TODAY, Number(c.dataset.days)))));
+// ── loan dates: "Prestado" (the day it went out) and "Vuelve" ─────────
+// dates = { lent, due, on }: ISO days (null while what she typed is not a date yet), and the
+// day they were set, so a date left over from yesterday's session never sticks.
+function loanDates(prev, keepDue) {
+  const days = summary.settings.loan_days;
+  if (!prev || prev.on !== TODAY) return { lent: TODAY, due: addDays(TODAY, days), on: TODAY };
+  const lent = prev.lent || TODAY;
+  return { lent, due: keepDue && prev.due ? prev.due : addDays(lent, days), on: TODAY };
+}
+const lentField = (id, dates) => `
+  <input class="line-input hand due-input" id="${id}" value="${fmtDM(dates.lent)}" inputmode="numeric" autocomplete="off" aria-describedby="${id}-day" data-date="lent" data-testid="${id === "l-lent" ? "lend-lent" : "sheet-lent"}">
+  <span class="due-day" id="${id}-day" data-day="lent">${dayWord(dates.lent)}</span>
+  <span class="chips due-chips" aria-label="Días rápidos"><button type="button" class="chip chip-sm" data-back="0">Hoy</button><button type="button" class="chip chip-sm" data-back="1">Ayer</button></span>`;
+const dueField = (id, dates) => `
+  <input class="line-input hand due-input" id="${id}" value="${fmtDM(dates.due)}" inputmode="numeric" autocomplete="off" aria-describedby="${id}-day" data-date="due" data-testid="${id === "l-due" ? "lend-due" : "sheet-due"}">
+  <span class="due-day" id="${id}-day" data-day="due">${dayName(dates.due)}</span>
+  <span class="chips due-chips" aria-label="Plazos rápidos">${[7, 14, 21].map((d) => `<button type="button" class="chip chip-sm" data-days="${d}">${d / 7} ${d === 7 ? "semana" : "semanas"}</button>`).join("")}</span>`;
+
+// The iPad may stay open overnight: a day picked yesterday must never be saved as if it were today's.
+// Asks the registry for today; true when the dates were set on another day (the caller redraws).
+async function newDay(dates) {
+  await refreshSummary();
+  return !dates || dates.on !== TODAY;
+}
+const NEW_DAY = "Empezó otro día: la fecha volvió a hoy. Revisala y cargalo de nuevo.";
+
+// Typed as dd/mm, with quick picks and the day spelled out. Moving the lent day keeps the loan
+// length, so "2 semanas" stays 2 weeks. onChange(dates) runs after every change.
+function wireDates(root, dates, onChange = () => {}) {
+  const lentIn = $("[data-date=lent]", root), dueIn = $("[data-date=due]", root);
+  let anchor = dates.lent; // last good lent day, to shift the return date from
+  const paint = () => {
+    lentIn.setAttribute("aria-invalid", String(!dates.lent));
+    dueIn.setAttribute("aria-invalid", String(!dates.due));
+    $("[data-day=lent]", root).textContent = dates.lent ? dayWord(dates.lent) : "escribila como 30/09 (hasta hoy)";
+    $("[data-day=due]", root).textContent = dates.due ? dayName(dates.due) : "escribila como 17/10";
+    root.classList.toggle("is-earlier-day", Boolean(dates.lent) && dates.lent !== TODAY);
+    $$("[data-back]", root).forEach((c) => c.setAttribute("aria-pressed", String(dates.lent === addDays(TODAY, -c.dataset.back))));
+    $$("[data-days]", root).forEach((c) => c.setAttribute("aria-pressed", String(Boolean(dates.lent) && dates.due === addDays(dates.lent, Number(c.dataset.days)))));
+    onChange(dates);
   };
-  input.addEventListener("input", sync);
-  chips.forEach((c) => c.addEventListener("click", () => { input.value = fmtDM(addDays(TODAY, Number(c.dataset.days))); sync(); }));
+  const setLent = (iso) => {
+    dates.lent = iso && iso <= TODAY ? iso : null;
+    if (dates.lent && anchor && dates.due) { dates.due = addDays(dates.due, daysFrom(anchor, dates.lent)); dueIn.value = fmtDM(dates.due); }
+    if (dates.lent) anchor = dates.lent;
+    paint();
+  };
+  lentIn.addEventListener("input", () => setLent(parseDM(lentIn.value, { past: true })));
+  dueIn.addEventListener("input", () => { dates.due = parseDM(dueIn.value, { from: dates.lent || TODAY }); paint(); });
+  $$("[data-back]", root).forEach((c) => c.addEventListener("click", () => { const iso = addDays(TODAY, -c.dataset.back); lentIn.value = fmtDM(iso); setLent(iso); }));
+  $$("[data-days]", root).forEach((c) => c.addEventListener("click", () => {
+    dates.due = addDays(dates.lent || TODAY, Number(c.dataset.days));
+    dueIn.value = fmtDM(dates.due);
+    paint();
+  }));
+  paint();
 }
 
 function clearLastResult() { const r = $("#counter-result"); if (r) r.innerHTML = ""; }
@@ -425,16 +467,21 @@ async function doLend(force) {
     (!desk.student ? $("#l-student") : $("#l-copy"))?.focus();
     return;
   }
-  const dueOn = parseDM($("#l-due").value);
-  if (!dueOn) {
-    notice.innerHTML = `<div class="notice notice-error" role="alert">No entendí la fecha de vuelta. Escribila como 17/10.</div>`;
-    $("#l-due").focus();
+  if (await newDay(desk.dates)) {
+    renderCounter();
+    $("#lend-notice").innerHTML = `<div class="notice notice-warn" role="alert">${NEW_DAY}</div>`;
+    return;
+  }
+  const { lent, due } = desk.dates;
+  if (!lent || !due) {
+    notice.innerHTML = `<div class="notice notice-error" role="alert">${!lent ? "No entendí el día del préstamo. Escribilo como 30/09 (no puede ser después de hoy)." : "No entendí la fecha de vuelta. Escribila como 17/10."}</div>`;
+    (!lent ? $("#l-lent") : $("#l-due")).focus();
     return;
   }
   const btn = $("[data-testid=lend-submit]");
   btn.classList.add("is-busy");
   try {
-    const loan = await api("POST", "/api/loans", { code: desk.copy.code, student_id: desk.student.id, due_on: dueOn, force });
+    const loan = await api("POST", "/api/loans", { code: desk.copy.code, student_id: desk.student.id, lent_on: lent, due_on: due, force });
     desk.student = null; desk.copy = null;
     renderCounter();
     showLent(loan);
@@ -469,7 +516,7 @@ function showLent(loan) {
     <div class="result-text">
       <h3>¡Prestado!</h3>
       <p><strong>${esc(loan.title)}</strong> se va con ${esc(loan.student)}${loan.grade ? ` (${esc(loan.grade)})` : ""}.</p>
-      <p class="muted">Tiene que volver el ${fmtDay(loan.due_on)}.</p>
+      <p class="muted">${loan.lent_on !== TODAY ? `Prestado el ${dayName(loan.lent_on)} ${fmtDay(loan.lent_on)}. ` : ""}Tiene que volver el ${fmtDay(loan.due_on)}.</p>
     </div></div>`;
 }
 
@@ -575,6 +622,160 @@ function renderAnswer(a) {
   }
 }
 
+// ══ CLASES ═════════════════════════════════════════════════════════════
+// Her Excel workbook: one tab per class, one row per student. Set the day once at the top, then go
+// down the rows typing (or scanning) the book each child takes: Enter saves it and moves on.
+// Returns tapped here are dated that same day, so a class visit can be written down afterwards.
+const sheet = { grade: null, dates: null };
+const sheetHref = (g) => `#/clases?clase=${encodeURIComponent(g)}`;
+
+async function viewClases(params) {
+  loading();
+  await refreshSummary();
+  sheet.dates = loanDates(sheet.dates, true);
+  const asked = params.has("clase") ? params.get("clase") : sheet.grade;
+  const data = await api("GET", `/api/sheet${asked != null ? `?grade=${encodeURIComponent(asked)}` : ""}`);
+  if (!data.tabs.length) {
+    main.innerHTML = `<div class="page-head"><div><h1>Clases</h1></div></div>
+      <div class="empty-state"><h3>Todavía no hay alumnos</h3><p>Cargá la lista de cada clase en <a href="#/ajustes">Ajustes</a> (desde Excel) o en <a href="#/alumnos">Alumnos</a>, y acá vas a tener una hoja por clase.</p></div>`;
+    return;
+  }
+  sheet.grade = data.grade;
+  const label = (g) => g || "Sin clase";
+  main.innerHTML = `
+    <div class="page-head"><div><h1>Clases</h1><p>Como tu planilla: una hoja por clase y un renglón por alumno.</p></div></div>
+    <nav class="sheet-tabs" aria-label="Clases" data-testid="sheet-tabs">
+      ${data.tabs.map((t) => `<a href="${sheetHref(t.grade)}" ${t.grade === data.grade ? 'aria-current="page"' : ""}>${esc(label(t.grade))} <span class="tab-count">${t.students}</span></a>`).join("")}
+    </nav>
+    <section class="sheet" aria-labelledby="sheet-h" data-testid="sheet">
+      <h2 id="sheet-h" class="sr-only">${esc(label(data.grade))}</h2>
+      <div class="sheet-dates" id="sheet-dates">
+        <div class="sheet-date"><label class="label-key" for="s-lent">Fecha</label><div class="due-line">${lentField("s-lent", sheet.dates)}</div></div>
+        <div class="sheet-date"><label class="label-key" for="s-due">Vuelve</label><div class="due-line">${dueField("s-due", sheet.dates)}</div></div>
+        <p class="sheet-note" data-testid="sheet-note"></p>
+      </div>
+      <div class="sheet-head" aria-hidden="true"><span>Alumno</span><span>Tiene ahora</span><span>Se lleva</span></div>
+      <ol class="sheet-rows" data-testid="sheet-rows">
+        ${data.students.map((s) => sheetRow(s)).join("")}
+        <li class="sheet-row sheet-add">
+          <form class="sheet-who" id="sheet-add"><label class="sr-only" for="sheet-new">Agregar alumno a ${esc(label(data.grade))}</label>
+            <input class="input" id="sheet-new" name="name" placeholder="+ Agregar alumno${data.grade ? ` a ${esc(data.grade)}` : ""}" autocomplete="off" data-testid="sheet-add-student"></form>
+        </li>
+      </ol>
+    </section>`;
+
+  wireDates($("#sheet-dates"), sheet.dates, (d) => {
+    $("[data-testid=sheet-note]").innerHTML = !d.lent ? "Escribí el día como 30/09. No puede ser después de hoy."
+      : d.lent === TODAY ? "Lo que anotes en esta hoja queda con fecha de hoy."
+      : `Estás anotando el <strong>${dayName(d.lent)} ${fmtDay(d.lent)}</strong>: los préstamos y las devoluciones de esta hoja quedan con ese día.`;
+  });
+  $$(".sheet-rows > li[data-student]").forEach((li) => wireSheetRow(li));
+  $("#sheet-add").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = $("#sheet-new");
+    if (!input.value.trim()) return;
+    try {
+      const s = await api("POST", "/api/students", { name: input.value, grade: data.grade });
+      const li = rowElement(sheetRow(s));
+      $(".sheet-add").before(li);
+      wireSheetRow(li);
+      input.value = "";
+      toast(`Agregado: ${s.name}${s.grade ? ` (${s.grade})` : ""}`);
+    } catch (err) { fail(err); }
+  });
+}
+
+function sheetRow(s, fresh = null) {
+  return `<li class="sheet-row" data-student="${s.id}" data-testid="sheet-row">
+    <div class="sheet-who"><a class="student-link" href="${studentHref(s.id)}">${esc(s.name)}</a>
+      <span class="muted">${s.times_borrowed ? plural(s.times_borrowed, "libro leído", "libros leídos") : "todavía ninguno"}</span></div>
+    <div class="sheet-has">${s.loans.length ? s.loans.map((l) => `<span class="held ${l.overdue ? "is-late" : ""} ${l.id === fresh ? "is-new" : ""}" data-testid="held">
+        <span class="forro swatch" ${forroAttrs(l)}></span>
+        <span class="held-text"><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><small>${l.overdue ? `venció el ${fmtDay(l.due_on)}` : `vuelve ${fmtRel(l.due_on)}`}</small></span>
+        <button type="button" class="btn btn-line btn-sm" data-held="${esc(l.code)}" aria-label="${esc(s.name)} devolvió ${esc(l.title)}">Devolvió</button>
+      </span>`).join("") : '<span class="muted">—</span>'}</div>
+    <div class="sheet-take combo"><input class="line-input hand" id="take-${s.id}" placeholder="título o código" aria-label="Libro que se lleva ${esc(s.name)}" data-testid="sheet-input"></div>
+    <div class="sheet-msg" aria-live="polite"></div>
+  </li>`;
+}
+const rowElement = (html) => { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+
+function wireSheetRow(li) {
+  const id = Number(li.dataset.student);
+  const input = $("[data-testid=sheet-input]", li);
+  combobox(input, {
+    fetcher: (q) => api("GET", `/api/suggest/copies?mode=lend&q=${encodeURIComponent(q)}`),
+    render: (c) => `<span class="forro swatch" ${forroAttrs(c)}></span>
+      <span><span class="opt-main">${esc(c.title)}</span> <span class="code">${esc(c.code)}</span><br><span class="opt-sub">${esc(c.author || "")}</span></span>`,
+    emptyText: (q) => `No hay ejemplares disponibles de «${q}».`,
+    onPick: (c) => sheetLend(li, id, c.code, false),
+  });
+  $$("[data-held]", li).forEach((b) => b.addEventListener("click", () => sheetReturn(li, id, b.dataset.held)));
+}
+
+// Redraw one student's row in place: the rest of the sheet (and anything typed in it) stays.
+async function redrawRow(li, id, fresh = null) {
+  const s = await api("GET", `/api/students/${id}`);
+  const row = rowElement(sheetRow(s, fresh));
+  li.replaceWith(row);
+  wireSheetRow(row);
+  return row;
+}
+
+async function sheetLend(li, id, code, force) {
+  const msg = $(".sheet-msg", li);
+  msg.innerHTML = "";
+  if (await newDay(sheet.dates)) { toast(NEW_DAY, { error: true }); route(); return; }
+  const { lent, due } = sheet.dates;
+  if (!lent || !due) { msg.innerHTML = `<div class="notice notice-error" role="alert">Revisá las fechas de arriba: ${!lent ? "el día" : "la vuelta"} no se entiende.</div>`; return; }
+  try {
+    const loan = await api("POST", "/api/loans", { code, student_id: id, lent_on: lent, due_on: due, force });
+    const row = await redrawRow(li, id, loan.id);
+    toast(`Prestado: ${loan.title} a ${loan.student}.`, { action: () => undoLend(loan) });
+    // Like Enter in Excel: on to the next child.
+    const next = row.nextElementSibling?.matches("[data-student]") ? $("[data-testid=sheet-input]", row.nextElementSibling) : null;
+    if (next) next.focus(); else document.activeElement?.blur();
+    refreshSummary();
+  } catch (err) {
+    const d = err.data || {};
+    if (d.code === "needs_confirmation") {
+      msg.innerHTML = `<div class="notice notice-warn" role="alert" data-testid="sheet-warning"><p>${esc(err.message)}</p>
+        <div class="row"><button type="button" class="btn btn-go btn-sm" data-act="force">Prestar igual</button>
+        <button type="button" class="btn btn-quiet btn-sm" data-act="cancel">Cancelar</button></div></div>`;
+      $("[data-act=force]", msg).addEventListener("click", () => sheetLend(li, id, code, true));
+      $("[data-act=cancel]", msg).addEventListener("click", () => { msg.innerHTML = ""; $("[data-testid=sheet-input]", li).value = ""; });
+      $("[data-act=force]", msg).focus();
+    } else if (d.code === "copy_on_loan") {
+      msg.innerHTML = `<div class="notice notice-warn" role="alert"><p>${esc(err.message)} Si ya lo devolvió, registrá la devolución y queda prestado acá.</p>
+        <div class="row"><button type="button" class="btn btn-go btn-sm" data-act="swap">Registrar devolución y prestar</button></div></div>`;
+      $("[data-act=swap]", msg).addEventListener("click", async () => {
+        try { await api("POST", "/api/returns", { code, returned_on: lent }); sheetLend(li, id, code, force); } catch (e) { fail(e); }
+      });
+    } else {
+      msg.innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`;
+    }
+  }
+}
+
+async function sheetReturn(li, id, code) {
+  if (await newDay(sheet.dates)) { toast(NEW_DAY, { error: true }); route(); return; }
+  if (!sheet.dates.lent) { toast("Revisá el día de arriba: escribilo como 30/09.", { error: true }); return; }
+  try {
+    const loan = await api("POST", "/api/returns", { code, returned_on: sheet.dates.lent });
+    await redrawRow(li, id);
+    toast(`Devuelto: ${loan.title}${loan.returned_on !== TODAY ? ` (el ${fmtDay(loan.returned_on)})` : ""}`, { action: () => undoReturn(loan) });
+    refreshSummary();
+  } catch (err) { fail(err); }
+}
+
+async function undoLend(loan) {
+  try {
+    await api("DELETE", `/api/loans/${loan.id}`);
+    toast(`Listo, ${loan.title} no quedó prestado a ${loan.student}.`);
+    route();
+  } catch (err) { fail(err); }
+}
+
 // ══ ATRASADOS ══════════════════════════════════════════════════════════
 async function viewAtrasados() {
   loading();
@@ -615,13 +816,24 @@ function wireLoanActions(root = main) {
     } catch (err) { fail(err); }
   }));
   $$("[data-due]", root).forEach((inp) => inp.addEventListener("change", async () => {
-    const dueOn = parseDM(inp.value);
+    const dueOn = parseDM(inp.value, { from: inp.dataset.from || TODAY });
     if (dueOn && dueOn === inp.dataset.saved) return; // one save per edit
     if (dueOn) inp.dataset.saved = dueOn;
     if (!dueOn) { inp.setAttribute("aria-invalid", "true"); toast("No entendí la fecha. Escribila como 17/10.", { error: true }); return; }
     try {
       const loan = await api("PATCH", `/api/loans/${inp.dataset.due}`, { due_on: dueOn });
       toast(`Nueva fecha para ${loan.title}: ${fmtDay(loan.due_on)}.`);
+      route();
+    } catch (err) { fail(err); }
+  }));
+  $$("[data-lent]", root).forEach((inp) => inp.addEventListener("change", async () => {
+    const lentOn = parseDM(inp.value, { past: true });
+    if (lentOn && lentOn === inp.dataset.saved) return; // one save per edit
+    if (lentOn) inp.dataset.saved = lentOn;
+    if (!lentOn) { inp.setAttribute("aria-invalid", "true"); toast("No entendí la fecha. Escribila como 30/09.", { error: true }); return; }
+    try {
+      const loan = await api("PATCH", `/api/loans/${inp.dataset.lent}`, { lent_on: lentOn });
+      toast(`${loan.title}: prestado el ${fmtDay(loan.lent_on)}.`);
       route();
     } catch (err) { fail(err); }
   }));
@@ -792,7 +1004,8 @@ async function viewAlumnos(params) {
       <a class="btn btn-quiet" href="#/alumnos?${showArchived ? "" : "archivados=1"}">${showArchived ? "Ocultar archivados" : "Ver archivados"}</a>
     </div>
     ${students.length ? [...groups].map(([g, list]) => `<section class="grade-group" data-hay-group>
-      <h3>${esc(g)} <small>${plural(list.length, "alumno", "alumnos")} · ${plural(list.reduce((n, s) => n + s.open_loans, 0), "libro afuera", "libros afuera")}</small></h3>
+      <h3>${esc(g)} <small>${plural(list.length, "alumno", "alumnos")} · ${plural(list.reduce((n, s) => n + s.open_loans, 0), "libro afuera", "libros afuera")}</small>
+        <a class="btn btn-quiet btn-sm" href="${sheetHref(g === "Sin clase" ? "" : g)}">${icon("sheet")}Planilla</a></h3>
       <div class="table-wrap"><table><tbody>${list.map((s) => `<tr data-hay="${esc(s.name.toLowerCase())}">
         <td><div class="book-cell"><span class="avatar" style="${studentColor(s.id)};width:34px;height:34px;font-size:.875rem">${esc(initials(s.name))}</span><a class="student-link" href="${studentHref(s.id)}">${esc(s.name)}</a>${s.archived ? ' <span class="pill pill-off">Archivado</span>' : ""}</div></td>
         <td>${s.open_loans ? `<span class="pill ${s.overdue ? "pill-late" : "pill-out"}">${plural(s.open_loans, "libro", "libros")}${s.overdue ? ", con atraso" : ""}</span>` : '<span class="muted">Sin libros</span>'}</td>
@@ -848,8 +1061,8 @@ async function viewAlumno(id) {
       ${s.loans.length ? `<div class="table-wrap"><table class="stack-sm" data-testid="student-loans"><thead><tr><th>Libro</th><th>Prestado</th><th>Vuelve el</th><th class="actions"></th></tr></thead><tbody>
         ${s.loans.map((l) => `<tr class="${l.overdue ? "is-late" : ""}">
           <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span>${l.overdue ? ` <span class="late-days">· ${plural(l.days_late, "día", "días")} de atraso</span>` : ""}</span></div></td>
-          <td data-label="Prestado">${fmtDay(l.lent_on)}</td>
-          <td data-label="Vuelve"><input class="line-input hand due-edit" value="${fmtDM(l.due_on)}" inputmode="numeric" data-due="${l.id}" aria-label="Fecha de vuelta de ${esc(l.title)}, día y mes"></td>
+          <td data-label="Prestado"><input class="line-input hand due-edit" value="${fmtDM(l.lent_on)}" inputmode="numeric" data-lent="${l.id}" aria-label="Día que se prestó ${esc(l.title)}, día y mes"></td>
+          <td data-label="Vuelve"><input class="line-input hand due-edit" value="${fmtDM(l.due_on)}" inputmode="numeric" data-due="${l.id}" data-from="${l.lent_on}" aria-label="Fecha de vuelta de ${esc(l.title)}, día y mes"></td>
           <td class="actions"><button type="button" class="btn btn-quiet btn-sm" data-renew="${l.id}">${icon("rotate-cw")}Renovar</button>
             <button type="button" class="btn btn-line btn-sm" data-return="${esc(l.code)}">Devolver</button></td>
         </tr>`).join("")}</tbody></table></div>` : `<p class="muted">No tiene libros prestados.</p>`}
@@ -1049,9 +1262,16 @@ async function viewAyuda() {
         "En el <strong>Mostrador</strong>, tocá <strong>Prestar</strong>.",
         "En <strong>Nombre</strong>, escribí el nombre o la clase del alumno y tocalo en la lista.",
         "En <strong>Libro</strong>, escribí el título o el código, o escanealo con el lector.",
-        `<strong>Vuelve</strong> ya trae la fecha (${plural(days, "día", "días")}). Para cambiarla, tocá 1, 2 o 3 semanas, o escribila como 17/10.`,
+        `<strong>Prestado</strong> es hoy. Si estás anotando un préstamo de otro día, escribilo como 30/09 o tocá <strong>Ayer</strong>.`,
+        `<strong>Vuelve</strong> ya trae la fecha (${plural(days, "día", "días")} después). Para cambiarla, tocá 1, 2 o 3 semanas, o escribila como 17/10.`,
         "Tocá el botón amarillo <strong>Prestar</strong>.",
       ], ["#/mostrador", "Ir al Mostrador"])}
+      ${card("clases", "sheet", "Anotar una clase entera", [
+        "En <strong>Clases</strong> hay una hoja por clase, como en tu Excel: arriba elegís la clase y cada renglón es un alumno.",
+        "Arriba, en <strong>Fecha</strong>, poné el día de la visita (hoy ya viene puesto). Los préstamos y devoluciones de la hoja quedan con ese día.",
+        "En el renglón de cada alumno escribí el título o escaneá el código y apretá Enter: queda prestado y pasás al siguiente.",
+        "Si devolvió un libro, tocá <strong>Devolvió</strong> al lado. ¿Te equivocaste de renglón? <strong>Deshacer</strong> en el aviso de abajo.",
+      ], ["#/clases", "Ir a Clases"])}
       ${card("devolver", "undo-2", "Recibir un libro que vuelve", [
         "En el <strong>Mostrador</strong>, tocá <strong>Devolver</strong>.",
         "Escribí el código, el título o el nombre del alumno, y tocá el libro en la lista. Con el lector: escaneá y listo.",
@@ -1106,7 +1326,8 @@ async function route() {
     else a.removeAttribute("aria-current");
   });
   try {
-    if (section === "atrasados") await viewAtrasados();
+    if (section === "clases") await viewClases(params);
+    else if (section === "atrasados") await viewAtrasados();
     else if (section === "libros" && parts[1]) await viewLibro(parts[1]);
     else if (section === "libros") await viewLibros(params);
     else if (section === "alumnos" && parts[1]) await viewAlumno(parts[1]);
@@ -1118,6 +1339,14 @@ async function route() {
     main.innerHTML = `<div class="empty-state"><h3>No pude abrir esta página</h3><p>${esc(err.message)}</p><a class="btn btn-line" href="#/mostrador">Volver al mostrador</a></div>`;
   }
 }
+
+// Coming back to the app on a new day: redraw, so every date on screen starts from the new today.
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible" || !summary) return;
+  const before = TODAY;
+  await refreshSummary().catch(() => {});
+  if (TODAY !== before) route();
+});
 
 let lastSection = null;
 window.addEventListener("hashchange", () => {

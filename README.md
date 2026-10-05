@@ -11,7 +11,8 @@ Registro de préstamos para la biblioteca de la escuela: quién se llevó qué l
 
 **Importante:** todo se guarda solo en ese iPad. Una vez por semana tocá **Ajustes → Guardar copia de seguridad**; el archivo queda en la app Archivos y desde ahí se puede mandar por mail o a Drive. Si un día hay que cambiar de iPad, en el nuevo: **Ajustes → Recuperar una copia**. La app avisa cuando pasó una semana sin copia.
 
-- **Mostrador**: prestar y devolver (también con lector de código de barras por Bluetooth), y la caja **Preguntá**: "¿Quién tiene Matilda?", "Martina", "4°B", "atrasados", "más leídos".
+- **Mostrador**: prestar y devolver (también con lector de código de barras por Bluetooth; el día del préstamo es hoy, o el que escribas), y la caja **Preguntá**: "¿Quién tiene Matilda?", "Martina", "4°B", "atrasados", "más leídos".
+- **Clases**: una hoja por clase y un renglón por alumno, como en Excel. Arriba ponés la fecha (por ejemplo, el día que vino la clase); en cada renglón escribís o escaneás el libro y Enter pasa al siguiente.
 - **Atrasados**: la lista para reclamar.
 - **Libros / Alumnos**: fichas con historial. Nada se borra: se archiva.
 - **Ajustes**: días de préstamo, máximo de libros, cargar alumnos, libros y **préstamos** desde Excel (.xlsx, .csv o filas pegadas), copias de seguridad, y las listas en Excel (.xlsx).

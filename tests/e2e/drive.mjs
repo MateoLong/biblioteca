@@ -116,7 +116,7 @@ try {
   await page.tap("[data-testid=help-link]");
   await page.waitForSelector("[data-testid=help-prestar]");
   const cards = await page.$$eval("[data-testid^=help-]:not([data-testid=help-link])", (els) => els.map((e) => e.dataset.testid.slice(5)));
-  check("help", "'?' opens the 7 help cards", cards.join(",") === "prestar,devolver,atrasados,preguntar,cargar,copia,probar", cards.join(","));
+  check("help", "'?' opens the 8 help cards", cards.join(",") === "prestar,clases,devolver,atrasados,preguntar,cargar,copia,probar", cards.join(","));
   check("help", "the '?' is marked as the current page", (await page.getAttribute("[data-testid=help-link]", "aria-current")) === "page");
   check("help", "loan length in the steps comes from Ajustes (14 días)", (await page.textContent("[data-testid=help-prestar]")).includes("14 días"));
   await shot("02b-ayuda");
@@ -371,27 +371,174 @@ try {
   check("offline", "with the website unreachable, the app still opens with her data", swReady && offlineOk, `service worker ready: ${swReady}, reloaded offline: ${offlineOk}`);
   await new Promise((r) => server.listen(PORT, r));
 
+  // ── F12 Clases: her Excel workbook. A tab per class, a row per student, one date for the sheet ──
+  {
+    const { ctx: cctx, page: cp } = await newIpad();
+    await go("mostrador", cp);
+    await cp.tap("[data-action=load-demo]");
+    await cp.waitForSelector("[data-testid=loan-tile]");
+    let cs = await saved(cp);
+    const sid = (name) => studentNamed(cs, name).id;
+    const row = (name) => `[data-testid=sheet-row][data-student="${sid(name)}"]`;
+    const loansOf = (state, name) => state.loans.filter((l) => l.student_id === studentNamed(state, name).id);
+    const titleOf = (state, l) => state.books.find((b) => b.id === copyOf(state, l.copy_id).book_id).title;
+
+    await cp.tap("nav.tabs a[data-tab=clases]");
+    await cp.waitForSelector("[data-testid=sheet-tabs]");
+    const tabs = await cp.$$eval("[data-testid=sheet-tabs] a", (as) => as.map((a) => a.textContent.replace(/\s+/g, " ").trim()));
+    check("clases", "one tab per class, with how many students", tabs.join(",") === "2°A 2,3°B 3,4°A 2,4°B 3,5°A 2,6°B 3", tabs.join(","));
+    await cp.tap("[data-testid=sheet-tabs] a:has-text('4°B')");
+    await cp.waitForFunction(() => document.querySelector("[data-testid=sheet-tabs] [aria-current=page]")?.textContent.includes("4°B"));
+    const names = await cp.$$eval("[data-testid=sheet-row] .student-link", (as) => as.map((a) => a.textContent));
+    check("clases", "4°B lists its students in the order they were loaded", names.join(",") === "Martina López,Joaquín Pereira,Agustina Silva", names.join(","));
+    check("clases", "each row shows what the child has now", (await cp.textContent(row("Martina López"))).includes("Matilda"));
+
+    // The class came on Wednesday; she writes it down on Saturday.
+    await cp.fill("[data-testid=sheet-lent]", "30/09");
+    check("clases", "Fecha 30/09 moves Vuelve to 14/10, two weeks after", (await cp.inputValue("[data-testid=sheet-due]")) === "14/10");
+    check("clases", "the sheet says loudly that it is writing down another day", (await cp.textContent("[data-testid=sheet-note]")).includes("miércoles 30/09") && await cp.$eval("#sheet-dates", (el) => el.classList.contains("is-earlier-day")));
+    await cp.waitForTimeout(300); // let the chips finish fading
+    await shot("11-clases-fecha", false, cp);
+
+    await cp.fill(`${row("Joaquín Pereira")} [data-testid=sheet-input]`, "pinocho");
+    await cp.waitForSelector(`${row("Joaquín Pereira")} li[data-i]`);
+    await cp.keyboard.press("Enter");
+    await cp.waitForFunction((sel) => document.querySelector(sel)?.textContent.includes("Las aventuras de Pinocho"), row("Joaquín Pereira"));
+    cs = await saved(cp);
+    const pin = loansOf(cs, "Joaquín Pereira").find((l) => titleOf(cs, l) === "Las aventuras de Pinocho");
+    readback.sheetLend = pin && { lent_on: pin.lent_on, due_on: pin.due_on };
+    check("clases", "Enter on a row saves the loan with the sheet's dates", pin && pin.lent_on === "2026-09-30" && pin.due_on === "2026-10-14", JSON.stringify(readback.sheetLend));
+    check("clases", "and moves on to the next child's row, like Excel", await cp.evaluate((id) => document.activeElement?.id === `take-${id}`, sid("Agustina Silva")));
+
+    // A barcode scanner on Agustina's row: the code, then Enter.
+    const ruperto = cs.copies.find((c) => c.book_id === bookTitled(cs, "Ruperto detective").id).code;
+    await cp.keyboard.type(ruperto);
+    await cp.keyboard.press("Enter");
+    await cp.waitForFunction((sel) => document.querySelector(sel)?.textContent.includes("Ruperto detective"), row("Agustina Silva"));
+    check("clases", "a scanned code + Enter lends that copy", loansOf(await saved(cp), "Agustina Silva").some((l) => l.returned_on == null && copyOf(cs, l.copy_id).code === ruperto));
+
+    await cp.tap(`${row("Martina López")} [data-held]`);
+    await cp.waitForFunction((sel) => !document.querySelector(sel)?.textContent.includes("Matilda"), row("Martina López"));
+    cs = await saved(cp);
+    const mat = loansOf(cs, "Martina López").find((l) => titleOf(cs, l) === "Matilda" && l.lent_on === "2026-09-30");
+    check("clases", "'Devolvió' returns it on the sheet's day, not today", mat?.returned_on === "2026-09-30", JSON.stringify(mat));
+    await shot("12-clases-4B", true, cp);
+
+    await cp.tap(".toast:has-text('Prestado: Ruperto') .btn");
+    await cp.waitForFunction((sel) => !document.querySelector(sel)?.textContent.includes("Ruperto"), row("Agustina Silva"));
+    check("clases", "Deshacer takes back a loan typed on the wrong row", !loansOf(await saved(cp), "Agustina Silva").some((l) => l.returned_on == null));
+
+    // Joaquín now has 2 books: a third warns on his row and saves nothing until confirmed.
+    await cp.fill(`${row("Joaquín Pereira")} [data-testid=sheet-input]`, "superzorro");
+    await cp.waitForSelector(`${row("Joaquín Pereira")} li[data-i]`);
+    await cp.keyboard.press("Enter");
+    await cp.waitForSelector(`${row("Joaquín Pereira")} [data-testid=sheet-warning]`);
+    const before3 = loansOf(await saved(cp), "Joaquín Pereira").filter((l) => l.returned_on == null).length;
+    check("clases", "the limit warns on the child's own row, nothing saved yet", before3 === 2 && (await cp.textContent(`${row("Joaquín Pereira")} [data-testid=sheet-warning]`)).includes("ya tiene 2 libros"));
+    await cp.tap(`${row("Joaquín Pereira")} [data-act=force]`);
+    await cp.waitForFunction((sel) => document.querySelector(sel)?.textContent.includes("El Superzorro"), row("Joaquín Pereira"));
+    check("clases", "'Prestar igual' saves it", loansOf(await saved(cp), "Joaquín Pereira").filter((l) => l.returned_on == null).length === 3);
+
+    await cp.fill("[data-testid=sheet-add-student]", "Valentina Ríos");
+    await cp.keyboard.press("Enter");
+    await cp.waitForFunction(() => [...document.querySelectorAll("[data-testid=sheet-row] .student-link")].some((a) => a.textContent === "Valentina Ríos"));
+    check("clases", "the last row adds a student to this class", studentNamed(await saved(cp), "Valentina Ríos")?.grade === "4°B");
+
+    // Left open overnight: the sheet still says "hoy" from yesterday. Saving must not use yesterday.
+    await cp.fill("[data-testid=sheet-lent]", "03/10");
+    await cp.evaluate(() => { globalThis.BIBLIO_TODAY = "2026-10-04"; });
+    await cp.fill(`${row("Agustina Silva")} [data-testid=sheet-input]`, "monstruo de colores");
+    await cp.waitForSelector(`${row("Agustina Silva")} li[data-i]`);
+    await cp.keyboard.press("Enter");
+    await cp.waitForFunction(() => document.querySelector("[data-testid=sheet-lent]")?.value === "04/10");
+    check("clases", "on a new day nothing is saved with yesterday's date; the sheet resets to today and says so",
+      !loansOf(await saved(cp), "Agustina Silva").some((l) => l.returned_on == null) && (await cp.textContent(".toasts")).includes("Empezó otro día"));
+    await cp.fill(`${row("Agustina Silva")} [data-testid=sheet-input]`, "monstruo de colores");
+    await cp.waitForSelector(`${row("Agustina Silva")} li[data-i]`);
+    await cp.keyboard.press("Enter");
+    await cp.waitForFunction((sel) => document.querySelector(sel)?.textContent.includes("El monstruo de colores"), row("Agustina Silva"));
+    check("clases", "loading it again saves it on the new today", loansOf(await saved(cp), "Agustina Silva").find((l) => l.returned_on == null)?.lent_on === "2026-10-04");
+    await cp.evaluate(() => { globalThis.BIBLIO_TODAY = "2026-10-03"; });
+
+    await cp.reload();
+    await cp.waitForSelector("[data-testid=sheet]");
+    check("clases", "after reopening, the sheet is still on 4°B", (await cp.textContent("[data-testid=sheet-tabs] [aria-current=page]")).includes("4°B"));
+
+    // The counter: "Prestado" is today, and can be another day.
+    await go("mostrador", cp);
+    check("lend-date", "Prestado starts on today", (await cp.inputValue("[data-testid=lend-lent]")) === "03/10" && (await cp.textContent("#l-lent-day")) === "hoy");
+    await cp.fill("[data-testid=lend-student]", "lucia");
+    await cp.waitForSelector("#l-student-list li[data-i]");
+    await cp.keyboard.press("Enter");
+    await cp.fill("[data-testid=lend-book]", "mafalda");
+    await cp.waitForSelector("#l-copy-list li[data-i]");
+    await cp.keyboard.press("Enter");
+    await cp.tap(".chip[data-back='1']");
+    check("lend-date", "'Ayer' sets 02/10 and Vuelve follows to 16/10", (await cp.inputValue("[data-testid=lend-lent]")) === "02/10" && (await cp.inputValue("[data-testid=lend-due]")) === "16/10");
+    await cp.tap("[data-testid=lend-submit]");
+    await cp.waitForSelector("[data-testid=lend-result]");
+    cs = await saved(cp);
+    const luc = loansOf(cs, "Lucía Fernández").find((l) => l.returned_on == null && titleOf(cs, l) === "Mafalda 1");
+    check("lend-date", "saved with lent_on 2026-10-02, due 2026-10-16", luc?.lent_on === "2026-10-02" && luc?.due_on === "2026-10-16", JSON.stringify(luc));
+    check("lend-date", "the next child keeps the same Prestado day", (await cp.inputValue("[data-testid=lend-lent]")) === "02/10");
+
+    // Left open overnight with "02/10" still on the label: the next day nothing is saved with it.
+    await cp.evaluate(() => { globalThis.BIBLIO_TODAY = "2026-10-04"; });
+    const before = (await saved(cp)).loans.length;
+    await cp.fill("[data-testid=lend-student]", "felipe");
+    await cp.waitForSelector("#l-student-list li[data-i]");
+    await cp.keyboard.press("Enter");
+    await cp.fill("[data-testid=lend-book]", "charlie");
+    await cp.waitForSelector("#l-copy-list li[data-i]");
+    await cp.keyboard.press("Enter");
+    await cp.tap("[data-testid=lend-submit]");
+    await cp.waitForFunction(() => document.querySelector("#lend-notice")?.textContent.includes("Empezó otro día"));
+    check("lend-date", "on a new day nothing is saved with the old Prestado; it goes back to today and says so",
+      (await saved(cp)).loans.length === before && (await cp.inputValue("[data-testid=lend-lent]")) === "04/10");
+    await cp.tap("[data-testid=lend-submit]");
+    await cp.waitForSelector("[data-testid=lend-result]");
+    cs = await saved(cp);
+    check("lend-date", "tapping Prestar again saves it on the new today", loansOf(cs, "Felipe Méndez").find((l) => l.returned_on == null)?.lent_on === "2026-10-04");
+    await cp.evaluate(() => { globalThis.BIBLIO_TODAY = "2026-10-03"; });
+
+    // Fixing the lent day of a loan already saved, on the student's page.
+    await go(`alumnos/${sid("Lucía Fernández")}`, cp);
+    const lentInput = cp.locator(`[data-testid=student-loans] input[data-lent="${luc.id}"]`);
+    await lentInput.fill("28/09");
+    await lentInput.press("Tab");
+    await cp.waitForTimeout(400);
+    readback.setLent = (await saved(cp)).loans.find((l) => l.id === luc.id);
+    check("lend-date", "typing 28/09 on the student's page saves 2026-09-28 (last month, not next year)", readback.setLent.lent_on === "2026-09-28" && readback.setLent.due_on === "2026-10-16", JSON.stringify(readback.setLent));
+    await cctx.close();
+  }
+
   // ── Layout: every screen at iPad portrait (820) and the smallest iPad (744) ──
   const demoCtx = await newIpad(IPAD_PORTRAIT);
   await go("mostrador", demoCtx.page);
   await demoCtx.page.tap("[data-action=load-demo]");
   await demoCtx.page.waitForSelector("[data-testid=loan-tile]");
   const ds = await saved(demoCtx.page);
-  const routes = ["mostrador", "atrasados", "libros", `libros/${bookTitled(ds, "Matilda").id}`, "alumnos", `alumnos/${studentNamed(ds, "Martina López").id}`, "ajustes", "ayuda"];
+  const routes = ["mostrador", "clases", "clases?clase=4%C2%B0B", "atrasados", "libros", `libros/${bookTitled(ds, "Matilda").id}`, "alumnos", `alumnos/${studentNamed(ds, "Martina López").id}`, "ajustes", "ayuda"];
   for (const width of [820, 744]) {
     await demoCtx.page.setViewportSize({ width, height: 1180 });
     for (const r of routes) {
       await go(r, demoCtx.page);
       const sw = await demoCtx.page.evaluate(() => document.documentElement.scrollWidth);
       check("layout", `#/${r} fits ${width}px portrait`, sw <= width, `scrollWidth ${sw}`);
-      if (width === 820) await shot(`p-${r.replace("/", "-")}`, true, demoCtx.page);
+      if (width === 820) await shot(`p-${r.replace(/[/?=%]/g, "-")}`, true, demoCtx.page);
     }
   }
-  for (const r of ["mostrador", "atrasados", "libros", "alumnos", "ajustes", "ayuda"]) {
+  for (const r of ["mostrador", "clases", "atrasados", "libros", "alumnos", "ajustes", "ayuda"]) {
     await go(r);
     const sw = await page.evaluate(() => document.documentElement.scrollWidth);
     check("layout", `#/${r} fits 1180px landscape`, sw <= 1180, `scrollWidth ${sw}`);
   }
+  // Older iPads are 1080 wide held sideways: the six tabs and the "?" stay on one line.
+  await page.setViewportSize({ width: 1080, height: 810 });
+  await go("clases");
+  const band = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, h: document.querySelector(".band").offsetHeight }));
+  check("layout", "at 1080px landscape the band is one line and nothing scrolls sideways", band.sw <= 1080 && band.h < 80, JSON.stringify(band));
+  await page.setViewportSize(IPAD_LANDSCAPE.viewport);
 
   // Impeccable review captures: fresh pages, no toasts, tiles rendered.
   mkdirSync(join(ROOT, ".impeccable", "review"), { recursive: true });

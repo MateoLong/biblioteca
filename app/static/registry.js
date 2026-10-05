@@ -86,6 +86,7 @@ function parseDue(value) {
   if (!s) throw new RegistryError("invalid", "No entendí la fecha de devolución.");
   return s;
 }
+const dmy = (iso) => iso.split("-").reverse().join("/");
 /**
  * A date as it comes out of a spreadsheet cell: an Excel date serial (45933),
  * dd/mm/yyyy, dd/mm/yy, dd/mm (this year), or yyyy-mm-dd. Empty -> null.
@@ -104,6 +105,27 @@ export function sheetDate(value, thisYear = new Date().getFullYear()) {
   if (m) iso = `${m[3] ? (m[3].length === 2 ? "20" + m[3] : m[3]) : thisYear}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
   if (!iso || !validIso(iso)) throw new RegistryError("invalid", `No entendí la fecha «${v}». Escribila como 17/10/2026.`);
   return iso;
+}
+
+/**
+ * A day she typed at the counter: '17/10', '17-10', '17/10/2027' -> ISO, or null.
+ * Without a year it is the day that makes sense:
+ * - a return date: the first such day on or after `from` (its lent day);
+ * - with `past` (the day a loan happened): the one nearest to today, this year or last.
+ *   If that one is still ahead it is refused, never moved a year back: 05/10 typed on 03/10 is a typo.
+ */
+export function typedDay(text, today, { from = today, past = false } = {}) {
+  const m = String(text).trim().match(/^(\d{1,2})\s*[/\-.]\s*(\d{1,2})(?:\s*[/\-.]\s*(\d{2}|\d{4}))?$/);
+  if (!m) return null;
+  const at = (y) => validIso(`${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`);
+  if (m[3]) return at(m[3].length === 2 ? `20${m[3]}` : m[3]);
+  if (past) {
+    const y = Number(today.slice(0, 4));
+    const near = [at(y), at(y - 1)].filter(Boolean).sort((a, b) => Math.abs(daysBetween(a, today)) - Math.abs(daysBetween(b, today)))[0];
+    return near && near <= today ? near : null;
+  }
+  const y = Number(from.slice(0, 4));
+  return [at(y), at(y + 1)].find((d) => d && d >= from) || null;
 }
 
 function positiveInt(value, label) {
@@ -364,13 +386,21 @@ export class Registry {
     };
   }
 
-  /** Lend one copy. Warnings (limit reached, overdue books) need force; conflicts never pass. */
-  lend(code, studentId, dueOn = null, force = false) {
+  /**
+   * Lend one copy. Warnings (limit reached, overdue books) need force; conflicts never pass.
+   * lentOn is the day it went out (today unless she is writing down an earlier day); the due
+   * date defaults to the loan period after it.
+   */
+  lend(code, studentId, dueOn = null, force = false, lentOn = null) {
     const copy = this._requireCopy(code);
     const st = this._requireStudent(studentId);
     const book = this._requireBook(copy.book_id);
     if (copy.archived || book.archived) throw new RegistryError("archived", `El ejemplar ${copy.code} está dado de baja.`);
     if (st.archived) throw new RegistryError("archived", `${st.name} está archivado/a.`);
+    const today = this.today();
+    const lent = lentOn ? this._pastDay(lentOn, "del préstamo") : today;
+    const due = dueOn ? parseDue(dueOn) : addDays(lent, this.state.settings.loan_days);
+    if (due < lent) throw new RegistryError("invalid", lent === today ? "La fecha de devolución no puede ser anterior a hoy." : "La fecha de devolución no puede ser anterior al préstamo.");
     const holder = this._openLoanForCopy(copy.id);
     if (holder) {
       const h = this._present(holder);
@@ -385,15 +415,29 @@ export class Registry {
       if (late.length) warnings.push(`Tiene atrasado: ${late.map((l) => l.title).join(", ")}.`);
       if (warnings.length) throw new RegistryError("needs_confirmation", warnings.join(" "), { loans: current });
     }
-    const today = this.today();
-    const due = dueOn ? parseDue(dueOn) : addDays(today, this.state.settings.loan_days);
-    if (due < today) throw new RegistryError("invalid", "La fecha de devolución no puede ser anterior a hoy.");
     const id = this._write((s) => {
       const lid = this._nextId("loan");
-      s.loans.push({ id: lid, copy_id: copy.id, student_id: st.id, lent_on: today, due_on: due, returned_on: null });
+      s.loans.push({ id: lid, copy_id: copy.id, student_id: st.id, lent_on: lent, due_on: due, returned_on: null });
       return lid;
     });
     return this.loan(id);
+  }
+
+  /** A day she says something happened: a real date, and not after today. */
+  _pastDay(value, what) {
+    const day = validIso(value);
+    if (!day) throw new RegistryError("invalid", `No entendí la fecha ${what}.`);
+    if (day > this.today()) throw new RegistryError("invalid", `La fecha ${what} no puede ser después de hoy.`);
+    return day;
+  }
+
+  /** Take back a loan made by mistake (wrong student, wrong book). Only while it is still out. */
+  undoLend(loanId) {
+    const loan = this._requireLoan(loanId);
+    if (loan.returned_on != null) throw new RegistryError("invalid", "Ese préstamo ya fue devuelto: queda en el historial.");
+    const gone = this.loan(loanId);
+    this._write((s) => { s.loans = s.loans.filter((l) => l.id !== loan.id); });
+    return gone;
   }
 
   _requireLoan(id) {
@@ -403,11 +447,14 @@ export class Registry {
   }
   loan(id) { return this._present(this._requireLoan(id)); }
 
-  returnCopy(code) {
+  /** Close the loan of this copy, on returnedOn (an earlier day she is writing down) or today. */
+  returnCopy(code, returnedOn = null) {
     const copy = this._requireCopy(code);
     const loan = this._openLoanForCopy(copy.id);
     if (!loan) throw new RegistryError("not_on_loan", `El ejemplar ${copy.code} no figura prestado.`);
-    this._write((s) => { s.loans.find((l) => l.id === loan.id).returned_on = this.today(); });
+    const day = returnedOn ? this._pastDay(returnedOn, "de devolución") : this.today();
+    if (day < loan.lent_on) throw new RegistryError("invalid", `No puede volver antes de prestarse: ${copy.code} se prestó el ${dmy(loan.lent_on)}.`);
+    this._write((s) => { s.loans.find((l) => l.id === loan.id).returned_on = day; });
     return this.loan(loan.id);
   }
 
@@ -428,6 +475,16 @@ export class Registry {
     const due = parseDue(dueOn);
     if (due < loan.lent_on) throw new RegistryError("invalid", "La fecha de devolución no puede ser anterior al préstamo.");
     this._write((s) => { s.loans.find((l) => l.id === loan.id).due_on = due; });
+    return this.loan(loanId);
+  }
+
+  /** Fix the day a loan went out. The due date stays; she changes it on its own. */
+  setLentOn(loanId, lentOn) {
+    const loan = this._requireLoan(loanId);
+    const day = this._pastDay(lentOn, "del préstamo");
+    if (day > loan.due_on) throw new RegistryError("invalid", `El préstamo no puede ser después de la fecha de vuelta (${dmy(loan.due_on)}).`);
+    if (loan.returned_on != null && day > loan.returned_on) throw new RegistryError("invalid", `El préstamo no puede ser después de la devolución (${dmy(loan.returned_on)}).`);
+    this._write((s) => { s.loans.find((l) => l.id === loan.id).lent_on = day; });
     return this.loan(loanId);
   }
 
@@ -452,6 +509,23 @@ export class Registry {
     const students = this.students(false, grade);
     const ids = new Set(students.map((s) => s.id));
     return { grade: students[0]?.grade || tidyGrade(grade), students, loans: this.openLoans().filter((l) => ids.has(l.student_id)) };
+  }
+
+  /**
+   * One class as she kept it in Excel: a tab per class, a row per student in the order they were
+   * loaded, with what each one has now. grade "" is the students without a class; null picks the
+   * first tab.
+   */
+  classSheet(grade = null) {
+    const active = this.state.students.filter((s) => !s.archived);
+    const tabs = this.grades().map((g) => ({ grade: g, students: active.filter((s) => gradeKey(s.grade) === gradeKey(g)).length }));
+    const ungraded = active.filter((s) => !s.grade).length;
+    if (ungraded) tabs.push({ grade: "", students: ungraded });
+    if (grade == null) grade = tabs[0]?.grade ?? "";
+    const key = gradeKey(grade);
+    const students = active.filter((s) => (key ? gradeKey(s.grade) === key : !s.grade)).sort((a, b) => a.id - b.id)
+      .map((s) => this.student(s.id));
+    return { grade: key ? (students[0]?.grade || tidyGrade(grade)) : "", tabs, students };
   }
 
   /**

@@ -2,7 +2,7 @@
 // Run: node --test tests/
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { Registry, RegistryError, emptyState, addDays, tidyColor } from "../app/static/registry.js";
+import { Registry, RegistryError, emptyState, addDays, tidyColor, typedDay } from "../app/static/registry.js";
 import * as DEMO from "../app/static/demo-data.js";
 
 let r, clock, saves, matilda, principito, martina, joaquin, bruno;
@@ -85,6 +85,79 @@ test("custom due date is kept and past dates are refused", () => {
   assert.equal(r.lend("B-0001", martina.id, "2026-10-30").due_on, "2026-10-30");
   rejects(() => r.lend("B-0002", joaquin.id, "2026-09-01"), "invalid");
   rejects(() => r.lend("B-0002", joaquin.id, "2026-02-31"), "invalid");
+});
+
+test("a loan can be written down on an earlier day; its due date counts from that day", () => {
+  const loan = r.lend("B-0001", martina.id, null, false, "2026-09-10");
+  assert.deepEqual([loan.lent_on, loan.due_on], ["2026-09-10", "2026-09-24"]);
+  assert.ok(loan.overdue, "already past its due date, so it shows as late");
+  assert.equal(r.lend("B-0003", joaquin.id, "2026-09-20", false, "2026-09-15").due_on, "2026-09-20");
+  rejects(() => r.lend("B-0002", bruno.id, null, false, "2026-10-02"), "invalid"); // tomorrow
+  rejects(() => r.lend("B-0002", bruno.id, "2026-09-01", false, "2026-09-05"), "invalid"); // due before lent
+  rejects(() => r.lend("B-0002", bruno.id, null, false, "2026-02-31"), "invalid");
+  assert.equal(r.book(matilda.id).available, 1, "refused loans leave the copy free");
+});
+
+test("a return can be written down on an earlier day, but not before the loan", () => {
+  r.lend("B-0001", martina.id, null, false, "2026-09-10");
+  rejects(() => r.returnCopy("B-0001", "2026-09-09"), "invalid");
+  rejects(() => r.returnCopy("B-0001", "2026-10-02"), "invalid");
+  assert.equal(r.returnCopy("B-0001", "2026-09-20").returned_on, "2026-09-20");
+  assert.equal(r.book(matilda.id).available, 2);
+});
+
+test("the lent day of a loan can be fixed afterwards, within its due and return dates", () => {
+  const loan = r.lend("B-0001", martina.id);
+  assert.equal(r.setLentOn(loan.id, "2026-09-28").lent_on, "2026-09-28");
+  assert.equal(r.loan(loan.id).due_on, "2026-10-15", "due date is left alone");
+  rejects(() => r.setLentOn(loan.id, "2026-10-02"), "invalid");
+  r.returnCopy("B-0001");
+  const old = r.lend("B-0002", joaquin.id, "2026-09-20", false, "2026-09-01");
+  r.returnCopy("B-0002", "2026-09-05");
+  rejects(() => r.setLentOn(old.id, "2026-09-06"), "invalid"); // after it came back
+  rejects(() => r.setLentOn(old.id, "2026-09-21"), "invalid"); // after it was due
+});
+
+test("a loan made by mistake can be taken back while it is still out", () => {
+  const loan = r.lend("B-0001", martina.id);
+  assert.equal(r.undoLend(loan.id).title, "Matilda");
+  assert.equal(r.student(martina.id).times_borrowed, 0);
+  assert.equal(r.book(matilda.id).available, 2);
+  const kept = r.lend("B-0001", joaquin.id);
+  r.returnCopy("B-0001");
+  rejects(() => r.undoLend(kept.id), "invalid");
+  assert.equal(r.studentHistory(joaquin.id).length, 1, "returned loans stay in the history");
+});
+
+test("the class sheet has a tab per class and a row per student in the order they were loaded", () => {
+  const ana = r.addStudent("Ana Álvarez", "4 b");
+  r.addStudent("Sin Clase", "");
+  r.lend("B-0001", joaquin.id, null, false, "2026-09-25");
+  const sheet = r.classSheet("4°b");
+  assert.equal(sheet.grade, "4°B");
+  assert.deepEqual(sheet.tabs, [{ grade: "3°B", students: 1 }, { grade: "4°B", students: 3 }, { grade: "", students: 1 }]);
+  assert.deepEqual(sheet.students.map((s) => s.name), ["Martina López", "Joaquín Pereira", "Ana Álvarez"]);
+  assert.deepEqual(sheet.students[1].loans.map((l) => [l.title, l.lent_on]), [["Matilda", "2026-09-25"]]);
+  assert.equal(r.classSheet().grade, "3°B", "no class asked: the first tab");
+  assert.deepEqual(r.classSheet("").students.map((s) => s.name), ["Sin Clase"]);
+  r.setStudentArchived(ana.id, true);
+  assert.equal(r.classSheet("4°B").students.length, 2, "archived students leave the sheet");
+});
+
+test("a typed day without a year is read the way she means it", () => {
+  // return dates: on or after the lent day
+  assert.equal(typedDay("17/10", "2026-10-03"), "2026-10-17");
+  assert.equal(typedDay("2/10", "2026-10-03"), "2027-10-02", "already past today: next year");
+  assert.equal(typedDay("31/12", "2027-01-08", { from: "2026-12-18" }), "2026-12-31", "lent last December: due this December, not next");
+  // the day a loan happened: the nearest one, never ahead of today
+  assert.equal(typedDay("30/09", "2026-10-03", { past: true }), "2026-09-30");
+  assert.equal(typedDay("18/12", "2027-01-08", { past: true }), "2026-12-18");
+  assert.equal(typedDay("05/10", "2026-10-03", { past: true }), null, "two days ahead is a typo, not last year");
+  assert.equal(typedDay("29/02", "2029-01-10", { past: true }), "2028-02-29");
+  // with a year, as typed; nonsense is null
+  assert.equal(typedDay("17/10/27", "2026-10-03"), "2027-10-17");
+  assert.equal(typedDay("31/02", "2026-10-03"), null);
+  assert.equal(typedDay("hola", "2026-10-03"), null);
 });
 
 // ── returning ──

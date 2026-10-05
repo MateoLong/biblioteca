@@ -40,6 +40,10 @@ _Avoid_: grupo, curso, grado (as separate ideas)
 One Ejemplar in the hands of one Alumno from a lent date until its Devolución. It stays in the history forever.
 _Avoid_: retiro, salida
 
+**Planilla**:
+One Clase's sheet, the way she kept it in Excel: a tab per Clase, a row per Alumno. She sets the day once (Fecha) and every Préstamo and Devolución written on it carries that day.
+_Avoid_: hoja de cálculo, grilla, tabla
+
 **Vence**:
 The date a Préstamo should come back. It defaults to the loan period after the lent date.
 _Avoid_: fecha límite, deadline
