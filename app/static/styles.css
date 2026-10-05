@@ -403,6 +403,12 @@ td .book-cell a:hover, td .student-link:hover { color: var(--moña); text-decora
 
 .add-form { margin-bottom: 22px; display: grid; gap: 14px; }
 .add-form .grid { display: grid; grid-template-columns: 2fr 1.5fr 110px; gap: 14px; }
+.add-form .grid-more { grid-template-columns: 2fr 1fr 1.5fr; }
+.book-meta { color: var(--ink-2); font-size: .875rem; }
+.section-pick { flex: 0 1 260px; }
+.note-cell { min-width: 180px; }
+.note-edit { min-height: 40px; padding: 6px 10px; font-size: .9375rem; border-color: transparent; background: transparent; }
+.note-edit:hover, .note-edit:focus { border-color: var(--line-strong); background: var(--paper); }
 .add-form .row { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .grade-group + .grade-group { margin-top: 28px; }
@@ -442,6 +448,7 @@ td .book-cell a:hover, td .student-link:hover { color: var(--moña); text-decora
   background-color: var(--c, var(--f-cobalto));
 }
 .edit-inline { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; margin-top: 12px; }
+.edit-inline.three { grid-template-columns: 1.4fr 1fr 1fr; }
 .stat-line { display: flex; gap: 18px; flex-wrap: wrap; color: var(--ink-2); margin-top: 6px; }
 .stat-line strong { color: var(--ink); }
 
@@ -550,7 +557,7 @@ pre.sample { margin: 0; background: var(--ground); border-radius: var(--r-sm); p
   .tabs .count { position: absolute; top: 2px; left: calc(50% + 8px); min-width: 20px; height: 20px; font-size: .75rem; padding: 0 5px; }
   main { padding: 20px 16px 96px; }
   .panel { padding: 18px; }
-  .add-form .grid, .settings .grid-2, .edit-inline { grid-template-columns: 1fr; }
+  .add-form .grid, .settings .grid-2, .edit-inline, .edit-inline.three { grid-template-columns: 1fr; }
   .label-form { padding: 14px; justify-items: stretch; }
   .etiqueta-form { padding: 10px 12px 14px; }
   .label-row { grid-template-columns: 1fr; gap: 0; }

@@ -15,7 +15,7 @@ Registro de préstamos para la biblioteca de la escuela: quién se llevó qué l
 - **Clases**: una hoja por clase y un renglón por alumno, como en Excel. Arriba ponés la fecha (por ejemplo, el día que vino la clase); en cada renglón escribís o escaneás el libro y Enter pasa al siguiente.
 - **Atrasados**: la lista para reclamar.
 - **Libros / Alumnos**: fichas con historial. Nada se borra: se archiva.
-- **Ajustes**: días de préstamo, máximo de libros, cargar alumnos, libros y **préstamos** desde Excel (.xlsx, .csv o filas pegadas), copias de seguridad, y las listas en Excel (.xlsx).
+- **Ajustes**: días de préstamo, máximo de libros, cargar alumnos, libros (con editorial, idioma, sección y notas de cada ejemplar) y **préstamos** desde Excel (.xlsx, .csv o filas pegadas), copias de seguridad, y las listas en Excel (.xlsx).
 
 ## Probarla desde una Mac
 

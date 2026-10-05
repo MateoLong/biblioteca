@@ -66,6 +66,14 @@ export function tidyColor(text) {
   throw new RegistryError("invalid", `No entendí el color «${String(text).trim()}». Usá azul (0 a 7), rojo (7 a 10) o verde (10 a 12).`);
 }
 
+// The language a book is written in. Common spellings become one name; anything else is kept as typed.
+const LANGUAGES = { espanol: "Español", castellano: "Español", es: "Español", spanish: "Español", ingles: "Inglés", english: "Inglés", en: "Inglés" };
+export function tidyLanguage(text) {
+  const t = String(text ?? "").trim().replace(/\s+/g, " ");
+  return LANGUAGES[norm(t)] || (t ? t[0].toUpperCase() + t.slice(1) : "");
+}
+const clean = (text) => String(text ?? "").trim().replace(/\s+/g, " ");
+
 const gradeSort = (g) => { const m = String(g || "").match(/^(\d+)/); return [m ? 0 : 1, m ? Number(m[1]) : 0, norm(g)]; };
 const cmp = (a, b) => { for (let i = 0; i < a.length; i++) { if (a[i] < b[i]) return -1; if (a[i] > b[i]) return 1; } return 0; };
 const byKey = (fn) => (x, y) => cmp(fn(x), fn(y));
@@ -203,7 +211,11 @@ export class Registry {
     if (taken) throw new RegistryError("code_taken", `El código ${taken.code} ya está en uso.`);
   }
 
-  addBook(title, author = "", copies = 1, codes = [], demo = false, color = "") {
+  /**
+   * more: { publisher, language, section } of the book, and notes for its copies
+   * (one string for all of them, or one per copy).
+   */
+  addBook(title, author = "", copies = 1, codes = [], demo = false, color = "", more = {}) {
     title = String(title || "").trim();
     if (!title) throw new RegistryError("invalid", "Falta el título del libro.");
     color = tidyColor(color);
@@ -218,32 +230,50 @@ export class Registry {
     }
     const id = this._write((s) => {
       const bookId = this._nextId("book");
-      s.books.push({ id: bookId, title, author: String(author || "").trim(), color, archived: false, is_demo: demo, created_at: now() });
+      s.books.push({ id: bookId, title, author: String(author || "").trim(), color, publisher: clean(more.publisher),
+        language: tidyLanguage(more.language), section: clean(more.section), archived: false, is_demo: demo, created_at: now() });
       for (let i = 0; i < count; i++) {
         const code = i < codes.length ? codes[i] : this._nextCode();
-        s.copies.push({ id: this._nextId("copy"), book_id: bookId, code: code.toUpperCase(), archived: false });
+        const note = Array.isArray(more.notes) ? more.notes[i] : more.notes;
+        s.copies.push({ id: this._nextId("copy"), book_id: bookId, code: code.toUpperCase(), note: clean(note), archived: false });
       }
       return bookId;
     });
     return this.book(id);
   }
 
-  addCopy(bookId, code) {
+  addCopy(bookId, code, note = "") {
     this._requireBook(bookId);
     code = String(code || "").trim() || this._nextCode();
     this._ensureCodeFree(code);
-    this._write((s) => s.copies.push({ id: this._nextId("copy"), book_id: Number(bookId), code: code.toUpperCase(), archived: false }));
+    this._write((s) => s.copies.push({ id: this._nextId("copy"), book_id: Number(bookId), code: code.toUpperCase(), note: clean(note), archived: false }));
     return this.book(bookId);
   }
 
-  updateBook(bookId, { title, author, color } = {}) {
+  updateBook(bookId, { title, author, color, publisher, language, section } = {}) {
     const b = this._requireBook(bookId);
     title = title == null ? b.title : String(title).trim();
     if (!title) throw new RegistryError("invalid", "Falta el título del libro.");
     author = author == null ? b.author : String(author).trim();
     color = color == null ? b.color : tidyColor(color);
-    this._write((s) => Object.assign(s.books.find((x) => x.id === b.id), { title, author, color }));
+    publisher = publisher == null ? b.publisher : clean(publisher);
+    language = language == null ? b.language : tidyLanguage(language);
+    section = section == null ? b.section : clean(section);
+    this._write((s) => Object.assign(s.books.find((x) => x.id === b.id), { title, author, color, publisher, language, section }));
     return this.book(bookId);
+  }
+
+  /** A copy's own note: who donated it, its edition, "autografiado"… */
+  setCopyNote(code, note) {
+    const c = this._requireCopy(code);
+    this._write((s) => { s.copies.find((x) => x.id === c.id).note = clean(note); });
+    return this.book(c.book_id);
+  }
+
+  /** The languages and sections in use, for the Libros filters and the add form. */
+  bookFacets() {
+    const pick = (field) => [...new Set(this.state.books.filter((b) => !b.archived && b[field]).map((b) => b[field]))].sort(byKey((x) => [norm(x)]));
+    return { languages: pick("language"), sections: pick("section") };
   }
 
   setBookArchived(bookId, archived) {
@@ -292,7 +322,7 @@ export class Registry {
     return this.state.books.filter((b) => includeArchived || !b.archived).map((b) => {
       const copies = this.state.copies.filter((c) => c.book_id === b.id && !c.archived);
       return { ...b, total: copies.length, available: copies.filter((c) => !this._openLoanForCopy(c.id)).length };
-    }).sort(byKey((b) => [norm(b.title)]));
+    }).sort(byKey((b) => [norm(b.title).replace(/^[^a-z0-9]+/, ""), b.id])); // '"Qué me importa"' files under Q
   }
 
   bookHistory(bookId) {
@@ -617,26 +647,54 @@ export class Registry {
     const top = rows.findIndex((r) => r.some((c) => c.trim()));
     if (top < 0) throw new RegistryError("invalid", "El archivo está vacío.");
     let header = rows[top].map(norm);
-    const known = new Set(["titulo", "autor", "ejemplares", "codigo", "codigos", "color", "edad", "nombre", "clase", "grado", "grupo"]);
+    const known = new Set(["titulo", "autor", "ejemplares", "codigo", "codigos", "color", "edad", "editorial", "idioma", "seccion", "notas", "nota",
+      "nombre", "clase", "grado", "grupo"]);
     let body, firstLine;
     if (header.some((h) => known.has(h))) { body = rows.slice(top + 1); firstLine = top + 2; }
     else { header = kind === "books" ? ["titulo", "autor", "ejemplares", "codigo"] : ["nombre", "clase"]; body = rows.slice(top); firstLine = top + 1; }
     const col = new Map(header.map((h, i) => [h, i]));
     const get = (row, ...names) => { for (const n of names) if (col.has(n) && col.get(n) < row.length) return String(row[col.get(n)]).trim(); return ""; };
-    let added = 0, skipped = 0;
+    let added = 0, skipped = 0, copies = 0;
     const errors = [];
+    // Books by title + author, so a long list doesn't compare every row with every book.
+    // (Only ids and fixed fields are kept here: every save works on a fresh copy of the state.)
+    const key = (title, author) => `${norm(title)}|${norm(author)}`;
+    const byTitle = new Map();
+    const remember = (b) => { const k = key(b.title, b.author); byTitle.set(k, [...(byTitle.get(k) || []), { id: b.id, color: b.color, language: b.language, section: b.section }]); };
+    if (kind === "books") this.state.books.forEach(remember);
+    const mine = new Set(); // books created by this file: a second row of the same book is another copy
     body.forEach((row, i) => {
       if (!row.some((cell) => String(cell).trim())) return;
+      const before = this.state;
       try {
         if (kind === "books") {
           const title = get(row, "titulo"), author = get(row, "autor");
-          if (this.state.books.some((b) => norm(b.title) === norm(title) && norm(b.author) === norm(author))) { skipped++; return; }
-          const codes = get(row, "codigo", "codigos").split(/[\s,|/]+/).filter(Boolean);
-          const n = get(row, "ejemplares");
+          if (!title) throw new RegistryError("invalid", "Falta el título del libro.");
           // A colour it can't read never costs her the book: it comes in without one, and she is told.
           let color = get(row, "color", "edad");
           try { color = tidyColor(color); } catch { errors.push(`Fila ${firstLine + i}: no entendí el color «${color}»; cargué «${title}» sin color.`); color = ""; }
-          this.addBook(title, author, /^\d+(\.0+)?$/.test(n) ? Number(n) : 1, codes, false, color);
+          const language = tidyLanguage(get(row, "idioma")), section = clean(get(row, "seccion")), publisher = clean(get(row, "editorial"));
+          const note = get(row, "notas", "nota");
+          // Same book: same title and author, and the same colour, language and section where the row gives them.
+          const match = (byTitle.get(key(title, author)) || []).find((b) => (!color || b.color === color)
+            && (!language || norm(b.language) === norm(language)) && (!section || norm(b.section) === norm(section)));
+          const codes = get(row, "codigo", "codigos").split(/[\s,|/]+/).filter(Boolean);
+          const n = get(row, "ejemplares");
+          const count = Math.max(codes.length, /^\d+(\.0+)?$/.test(n) ? Number(n) : 1);
+          if (match && !mine.has(match.id)) { skipped++; return; }
+          if (match) {
+            for (let k = 0; k < count; k++) this.addCopy(match.id, codes[k] || "", note);
+            // Copies of other editions: keep every publisher.
+            const had = this._requireBook(match.id).publisher;
+            if (publisher && !had.split(" / ").includes(publisher)) this.updateBook(match.id, { publisher: had ? `${had} / ${publisher}` : publisher });
+          } else {
+            const b = this.addBook(title, author, count, codes, false, color, { publisher, language, section, notes: note });
+            mine.add(b.id);
+            remember(b);
+            added++;
+          }
+          copies += count;
+          return;
         } else if (kind === "students") {
           const name = get(row, "nombre"), grade = get(row, "clase", "grado", "grupo");
           if (this.state.students.some((s) => norm(s.name) === norm(name) && gradeKey(s.grade) === gradeKey(grade))) { skipped++; return; }
@@ -647,10 +705,12 @@ export class Registry {
         added++;
       } catch (err) {
         if (!(err instanceof RegistryError)) throw err;
+        // Each row is all or nothing.
+        if (this.state !== before) { this.state = before; this._save(this.state); }
         errors.push(`Fila ${firstLine + i}: ${err.message}`);
       }
     });
-    return { added, skipped, errors: errors.slice(0, 20) };
+    return { added, skipped, copies, errors: errors.slice(0, 20) };
   }
 
   /**
@@ -762,11 +822,13 @@ export class Registry {
       const rows = [];
       for (const b of this.books(true)) {
         for (const c of this.book(b.id).copies) {
-          rows.push([c.code, b.title, b.author, b.color ? b.color[0].toUpperCase() + b.color.slice(1) : "", c.archived || b.archived ? "Dado de baja" : c.loan ? "Prestado" : "Disponible",
-            c.loan?.student || "", c.loan?.grade || "", c.loan?.due_on || null]);
+          rows.push([c.code, b.title, b.author, b.publisher, b.language, b.section, b.color ? b.color[0].toUpperCase() + b.color.slice(1) : "", c.note,
+            c.archived || b.archived ? "Dado de baja" : c.loan ? "Prestado" : "Disponible", c.loan?.student || "", c.loan?.grade || "", c.loan?.due_on || null]);
         }
       }
-      return { name: "Libros", columns: [["Código", 10], ["Título", 34], ["Autor", 24], ["Color", 8], ["Estado", 13], ["Lo tiene", 26], ["Clase", 8], ["Vence", 12, D]], rows };
+      // One row per copy, with the same column names the book import reads, so it comes back in as it went out.
+      return { name: "Libros", columns: [["Código", 10], ["Título", 34], ["Autor", 24], ["Editorial", 26], ["Idioma", 10], ["Sección", 16], ["Color", 8], ["Notas", 30],
+        ["Estado", 13], ["Lo tiene", 26], ["Clase", 8], ["Vence", 12, D]], rows };
     }
     if (kind === "students") {
       return {
@@ -849,9 +911,13 @@ export class Registry {
 
 function migrate(state) {
   const base = emptyState();
-  // Books saved before the age-band colour existed have none yet.
-  const books = (state.books || base.books).map((b) => { let color = ""; try { color = tidyColor(b.color); } catch { /* unreadable: unset */ } return { ...b, color }; });
-  return { ...base, ...state, books, seq: { ...base.seq, ...(state.seq || {}) }, settings: { ...base.settings, ...(state.settings || {}) } };
+  // Books saved before the age-band colour (or publisher, language, section) existed have none yet.
+  const books = (state.books || base.books).map((b) => {
+    let color = ""; try { color = tidyColor(b.color); } catch { /* unreadable: unset */ }
+    return { publisher: "", language: "", section: "", ...b, color };
+  });
+  const copies = (state.copies || base.copies).map((c) => ({ note: "", ...c }));
+  return { ...base, ...state, books, copies, seq: { ...base.seq, ...(state.seq || {}) }, settings: { ...base.settings, ...(state.settings || {}) } };
 }
 
 /** CSV / pasted spreadsheet text -> rows. Handles quotes; picks ';', ',' or tab from the first line. */

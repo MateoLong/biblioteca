@@ -20,6 +20,18 @@ _Avoid_: ID, número de inventario
 The age band a Libro is for, matching the coloured sticker on the real book: Azul (0 a 7 años), Rojo (7 a 10), Verde (10 a 12). A Libro without one is "Sin color" and shows grey. It belongs to the Libro, not to each Ejemplar.
 _Avoid_: categoría, nivel, edad (as the field name)
 
+**Sección**:
+Where a Libro lives in the catalogue beyond its age band: Cómics, No ficción, Roald Dahl, Material de referencia… It came from the tabs of her catalogue workbooks. Optional.
+_Avoid_: categoría, estante
+
+**Idioma**:
+The language a Libro is written in: Español or Inglés (the school has a catalogue for each).
+_Avoid_: lengua
+
+**Notas** (of an Ejemplar):
+What is particular to one physical copy: who donated it, its edition, "autografiado". Each copy has its own.
+_Avoid_: observaciones, comentarios
+
 **Dar de baja**:
 To take one Ejemplar out of circulation (lost or damaged) while keeping its history.
 _Avoid_: borrar, eliminar

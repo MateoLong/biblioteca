@@ -80,7 +80,7 @@ export const flushed = async () => { while (writing) await writing; };
 
 // ── routes ─────────────────────────────────────────────────────────────
 const ROUTES = [
-  ["GET", /^\/api\/summary$/, () => ({ ...registry.summary(), settings: registry.settings(), grades: registry.grades() })],
+  ["GET", /^\/api\/summary$/, () => ({ ...registry.summary(), settings: registry.settings(), grades: registry.grades(), ...registry.bookFacets() })],
   ["GET", /^\/api\/ask$/, (q) => registry.ask(q.get("q") || "")],
   ["GET", /^\/api\/suggest\/students$/, (q) => registry.suggestStudents(q.get("q") || "")],
   ["GET", /^\/api\/suggest\/copies$/, (q) => registry.suggestCopies(q.get("q") || "", q.get("mode") || "lend")],
@@ -94,15 +94,16 @@ const ROUTES = [
   ["GET", /^\/api\/sheet$/, (q) => registry.classSheet(q.has("grade") ? q.get("grade") : null)],
   ["GET", /^\/api\/books$/, (q) => registry.books(q.get("archived") === "1")],
   ["POST", /^\/api\/books$/, (q, b) => registry.addBook(b.title || "", b.author || "", Number(b.copies) || 1,
-    String(b.codes || "").split(/[\s,]+/).filter(Boolean), false, b.color || "")],
+    String(b.codes || "").split(/[\s,]+/).filter(Boolean), false, b.color || "", { publisher: b.publisher, language: b.language, section: b.section })],
   ["GET", /^\/api\/books\/(\d+)$/, (q, b, id) => ({ ...registry.book(id), history: registry.bookHistory(id) })],
   ["PATCH", /^\/api\/books\/(\d+)$/, (q, b, id) => {
     if ("archived" in b) registry.setBookArchived(id, b.archived);
-    if ("title" in b || "author" in b || "color" in b) registry.updateBook(id, b);
+    if (["title", "author", "color", "publisher", "language", "section"].some((k) => k in b)) registry.updateBook(id, b);
     return registry.book(id);
   }],
   ["POST", /^\/api\/books\/(\d+)\/copies$/, (q, b, id) => registry.addCopy(id, b.code)],
-  ["PATCH", /^\/api\/copies\/([^/]+)$/, (q, b, code) => registry.setCopyArchived(decodeURIComponent(code), Boolean(b.archived))],
+  ["PATCH", /^\/api\/copies\/([^/]+)$/, (q, b, code) => ("note" in b ? registry.setCopyNote(decodeURIComponent(code), b.note)
+    : registry.setCopyArchived(decodeURIComponent(code), Boolean(b.archived)))],
   ["GET", /^\/api\/students$/, (q) => registry.students(q.get("archived") === "1", q.get("grade") || null)],
   ["POST", /^\/api\/students$/, (q, b) => registry.addStudent(b.name || "", b.grade || "")],
   ["GET", /^\/api\/students\/(\d+)$/, (q, b, id) => ({ ...registry.student(id), history: registry.studentHistory(id) })],

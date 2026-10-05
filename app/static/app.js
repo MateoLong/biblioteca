@@ -844,11 +844,21 @@ async function viewLibros(params) {
   loading();
   const showArchived = params.get("archivados") === "1";
   const [all] = await Promise.all([api("GET", `/api/books${showArchived ? "?archived=1" : ""}`), refreshSummary()]);
-  // ?color=azul|rojo|verde|sin narrows the list to one age band.
+  // ?color=azul|rojo|verde|sin, ?idioma=Inglés and ?seccion=Cómics (or - for none) narrow the list; they combine.
   const want = params.get("color");
-  const books = want ? all.filter((b) => (b.color || "sin") === want) : all;
-  const colorHref = (c) => `#/libros?${new URLSearchParams({ ...(c ? { color: c } : {}), ...(showArchived ? { archivados: "1" } : {}) })}`;
+  const lang = params.get("idioma") || "", sec = params.get("seccion") || "";
+  const books = all.filter((b) => (!want || (b.color || "sin") === want) && (!lang || b.language === lang)
+    && (!sec || (sec === "-" ? !b.section : b.section === sec)));
+  const filtered = Boolean(want || lang || sec);
+  const href = (changes) => {
+    const p = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(changes)) { if (v) p.set(k, v); else p.delete(k); }
+    const q = p.toString();
+    return `#/libros${q ? `?${q}` : ""}`;
+  };
+  const colorHref = (c) => href({ color: c });
   const count = (c) => all.filter((b) => (b.color || "sin") === c).length;
+  const facetList = (id, values) => `<datalist id="${id}">${values.map((v) => `<option value="${esc(v)}">`).join("")}</datalist>`;
   main.innerHTML = `
     <div class="page-head"><div><h1>Libros</h1><p>${plural(books.filter((b) => !b.archived).length, "título", "títulos")} · ${plural(books.reduce((n, b) => n + b.total, 0), "ejemplar", "ejemplares")}</p></div>
       <button type="button" class="btn btn-go" id="add-toggle" aria-expanded="false" data-testid="add-book-toggle">${icon("plus")}Agregar libro</button></div>
@@ -859,6 +869,12 @@ async function viewLibros(params) {
         <label class="field"><span>Autor</span><input class="input" name="author" data-testid="book-author"></label>
         <label class="field"><span>Ejemplares</span><input class="input" name="copies" type="number" min="1" max="200" value="1" data-testid="book-copies"></label>
       </div>
+      <div class="grid grid-more">
+        <label class="field"><span>Editorial</span><input class="input" name="publisher" placeholder="Santillana. Montevideo, 2017" data-testid="book-publisher"></label>
+        <label class="field"><span>Idioma</span><input class="input" name="language" list="languages" value="${esc(lang)}" placeholder="Español" data-testid="book-language"></label>
+        <label class="field"><span>Sección</span><input class="input" name="section" list="sections" value="${esc(sec !== "-" ? sec : "")}" placeholder="Cómics, No ficción…" data-testid="book-section"></label>
+      </div>
+      ${facetList("languages", summary.languages)}${facetList("sections", summary.sections)}
       ${colorPicks(want && want !== "sin" ? want : "")}
       <label class="field"><span>Códigos (opcional)</span><input class="input" name="codes" placeholder="Si ya tienen etiqueta: B-0101, B-0102. Si no, los numero yo."><small>Separados por coma. Si los dejás vacíos, cada ejemplar recibe el siguiente número libre.</small></label>
       <div id="add-book-msg"></div>
@@ -869,17 +885,25 @@ async function viewLibros(params) {
       ${["azul", "rojo", "verde"].map((c) => `<a class="chip" href="${colorHref(c)}" ${want === c ? 'aria-current="true"' : ""} data-filter="${c}"><span class="dot" style="--c: var(--f-${FORRO_BY_COLOR[c]})"></span>${colorName(c)} <span class="muted">${COLORS[c].replace(" años", "")} · ${count(c)}</span></a>`).join("")}
       ${count("sin") ? `<a class="chip" href="${colorHref("sin")}" ${want === "sin" ? 'aria-current="true"' : ""} data-filter="sin"><span class="dot" style="--c: var(--f-gris)"></span>Sin color <span class="muted">· ${count("sin")}</span></a>` : ""}
     </nav>
+    ${summary.languages.length ? `<nav class="chips color-filter" aria-label="Filtrar por idioma" data-testid="language-filter">
+      <a class="chip" href="${href({ idioma: "" })}" ${!lang ? 'aria-current="true"' : ""}>Todos los idiomas</a>
+      ${summary.languages.map((l) => `<a class="chip" href="${href({ idioma: l })}" ${lang === l ? 'aria-current="true"' : ""} data-language="${esc(l)}">${esc(l)} <span class="muted">· ${all.filter((b) => b.language === l).length}</span></a>`).join("")}
+    </nav>` : ""}
     <div class="toolbar">
-      <label class="input-icon">${icon("search")}<input class="input" id="filter" type="search" placeholder="Filtrar por título, autor o código" aria-label="Filtrar libros"></label>
+      <label class="input-icon">${icon("search")}<input class="input" id="filter" type="search" placeholder="Filtrar por título, autor, editorial o sección" aria-label="Filtrar libros"></label>
+      ${summary.sections.length ? `<label class="section-pick"><span class="sr-only">Sección</span><select class="input" id="section-pick" data-testid="section-filter">
+        <option value="">Todas las secciones</option><option value="-" ${sec === "-" ? "selected" : ""}>Sin sección</option>
+        ${summary.sections.map((x) => `<option value="${esc(x)}" ${sec === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></label>` : ""}
       <a class="btn btn-quiet" href="#/libros${showArchived ? "" : "?archivados=1"}">${showArchived ? "Ocultar archivados" : "Ver archivados"}</a>
     </div>
     ${books.length ? `<div class="table-wrap"><table data-testid="books-table"><thead><tr><th>Título</th><th class="hide-sm">Autor</th><th>Disponibles</th></tr></thead>
-      <tbody>${books.map((b) => `<tr data-hay="${esc((b.title + " " + b.author).toLowerCase())}">
-        <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(b)}></span><a href="${bookHref(b.id)}">${esc(b.title)}</a>${b.archived ? ' <span class="pill pill-off">Archivado</span>' : ""}</div></td>
+      <tbody>${books.map((b) => `<tr data-hay="${esc([b.title, b.author, b.publisher, b.section, b.language].join(" ").toLowerCase())}">
+        <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(b)}></span><span><a href="${bookHref(b.id)}">${esc(b.title)}</a>${b.archived ? ' <span class="pill pill-off">Archivado</span>' : ""}
+          ${b.section || b.language ? `<br><span class="book-meta">${esc([b.section, b.language].filter(Boolean).join(" · "))}</span>` : ""}</span></div></td>
         <td class="hide-sm">${esc(b.author)}</td>
         <td>${b.total ? `<span class="pill ${b.available ? "pill-ok" : "pill-out"}">${b.available} de ${b.total}</span>` : '<span class="muted">—</span>'}</td>
       </tr>`).join("")}</tbody></table></div>`
-      : want ? `<div class="empty-state"><h3>No hay libros ${want === "sin" ? "sin color" : `de color ${want}`}</h3><p><a href="${colorHref("")}">Ver todos los libros</a></p></div>`
+      : filtered ? `<div class="empty-state"><h3>No hay libros con ${want && !lang && !sec ? (want === "sin" ? "sin color" : `color ${want}`) : "estos filtros"}</h3><p><a href="${href({ color: "", idioma: "", seccion: "" })}">Ver todos los libros</a></p></div>`
       : `<div class="empty-state"><h3>Todavía no hay libros</h3><p>Agregalos uno por uno con el botón amarillo, o traelos todos juntos de una planilla desde Ajustes.</p></div>`}`;
 
   const form = $("#add-book");
@@ -892,11 +916,13 @@ async function viewLibros(params) {
     const msg = $("#add-book-msg");
     if (!form.title.value.trim()) { msg.innerHTML = `<div class="notice notice-error" role="alert">Falta el título.</div>`; form.title.setAttribute("aria-invalid", "true"); form.title.focus(); return; }
     try {
-      const book = await api("POST", "/api/books", { title: form.title.value, author: form.author.value, copies: form.copies.value, codes: form.codes.value, color: form.color.value });
+      const book = await api("POST", "/api/books", { title: form.title.value, author: form.author.value, copies: form.copies.value, codes: form.codes.value, color: form.color.value,
+        publisher: form.publisher.value, language: form.language.value, section: form.section.value });
       toast(`Agregado: ${book.title} (${book.copies.map((c) => c.code).join(", ")})`);
       location.hash = bookHref(book.id);
     } catch (err) { msg.innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`; }
   });
+  $("#section-pick")?.addEventListener("change", (e) => { location.hash = href({ seccion: e.target.value }); });
   wireFilter();
 }
 
@@ -919,21 +945,29 @@ async function viewLibro(id) {
     <div class="detail-head">
       <span class="forro" ${forroAttrs(b)}></span>
       <div><h1>${esc(b.title)}</h1><p class="muted" style="font-size:1.125rem">${esc(b.author)}</p>
-        <div class="stat-line"><span data-testid="book-color"><span class="dot" style="--c: var(--f-${forro(b).name})"></span>${b.color ? `<strong>${colorName(b.color)}</strong> · ${COLORS[b.color]}` : "<strong>Sin color</strong> · tocá Editar para ponerle uno"}</span><span><strong>${b.available}</strong> de ${b.total} en la biblioteca</span><span>Prestado <strong>${plural(b.times_lent, "vez", "veces")}</strong></span>${b.archived ? '<span class="pill pill-off">Archivado</span>' : ""}</div></div>
+        ${b.publisher ? `<p class="muted" data-testid="book-publisher">${esc(b.publisher)}</p>` : ""}
+        <div class="stat-line">${b.language ? `<span data-testid="book-language">${esc(b.language)}</span>` : ""}${b.section ? `<span data-testid="book-section"><a href="#/libros?${new URLSearchParams({ seccion: b.section })}">${esc(b.section)}</a></span>` : ""}<span data-testid="book-color"><span class="dot" style="--c: var(--f-${forro(b).name})"></span>${b.color ? `<strong>${colorName(b.color)}</strong> · ${COLORS[b.color]}` : "<strong>Sin color</strong> · tocá Editar para ponerle uno"}</span><span><strong>${b.available}</strong> de ${b.total} en la biblioteca</span><span>Prestado <strong>${plural(b.times_lent, "vez", "veces")}</strong></span>${b.archived ? '<span class="pill pill-off">Archivado</span>' : ""}</div></div>
       <div class="btn-col"><button type="button" class="btn btn-line" id="edit-toggle">Editar</button>
         <button type="button" class="btn btn-quiet ${b.archived ? "" : "btn-danger"}" id="archive">${icon("archive")}${b.archived ? "Reactivar" : "Archivar"}</button></div>
     </div>
-    <form class="panel" id="edit-form" hidden>${colorPicks(b.color)}<div class="edit-inline">
+    <form class="panel" id="edit-form" hidden>${colorPicks(b.color)}<div class="edit-inline three">
       <label class="field"><span>Título</span><input class="input" name="title" value="${esc(b.title)}"></label>
       <label class="field"><span>Autor</span><input class="input" name="author" value="${esc(b.author)}"></label>
-      <button class="btn btn-go" type="submit">Guardar</button></div></form>
+      <label class="field"><span>Editorial</span><input class="input" name="publisher" value="${esc(b.publisher)}"></label></div>
+      <div class="edit-inline">
+      <label class="field"><span>Idioma</span><input class="input" name="language" list="languages" value="${esc(b.language)}"></label>
+      <label class="field"><span>Sección</span><input class="input" name="section" list="sections" value="${esc(b.section)}"></label>
+      <button class="btn btn-go" type="submit">Guardar</button></div>
+      <datalist id="languages">${summary.languages.map((v) => `<option value="${esc(v)}">`).join("")}</datalist>
+      <datalist id="sections">${summary.sections.map((v) => `<option value="${esc(v)}">`).join("")}</datalist></form>
     <section class="section" aria-labelledby="copies-h">
       <h2 id="copies-h">Ejemplares</h2>
-      <div class="table-wrap"><table class="stack-sm" data-testid="copies-table"><thead><tr><th>Código</th><th>Estado</th><th>Quién lo tiene</th><th class="actions"></th></tr></thead><tbody>
+      <div class="table-wrap"><table class="stack-sm" data-testid="copies-table"><thead><tr><th>Código</th><th>Estado</th><th>Quién lo tiene</th><th>Notas</th><th class="actions"></th></tr></thead><tbody>
       ${b.copies.map((c) => `<tr class="${c.loan?.overdue ? "is-late" : ""}">
         <td><strong>${esc(c.code)}</strong></td>
         <td>${statusPill(c, b.archived)}</td>
         <td>${c.loan ? `<a class="student-link" href="${studentHref(c.loan.student_id)}">${esc(c.loan.student)}</a> <span class="muted">${esc(c.loan.grade)} · ${c.loan.overdue ? `<span class="late-days">venció el ${fmtDay(c.loan.due_on)}</span>` : `vuelve ${fmtRel(c.loan.due_on)}`}</span>` : '<span class="muted">—</span>'}</td>
+        <td class="note-cell"><input class="input note-edit" value="${esc(c.note)}" placeholder="donación, edición…" data-note="${esc(c.code)}" aria-label="Notas del ejemplar ${esc(c.code)}"></td>
         <td class="actions">${c.loan ? `<button type="button" class="btn btn-line btn-sm" data-return="${esc(c.code)}">Devolver</button>`
           : `<button type="button" class="btn btn-quiet btn-sm" data-copy="${esc(c.code)}" data-archived="${c.archived ? 0 : 1}">${c.archived ? "Reactivar" : "Dar de baja"}</button>`}</td>
       </tr>`).join("")}</tbody></table></div>
@@ -944,7 +978,11 @@ async function viewLibro(id) {
   $("#edit-toggle").addEventListener("click", () => { $("#edit-form").hidden = !$("#edit-form").hidden; });
   $("#edit-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    try { await api("PATCH", `/api/books/${id}`, { title: e.target.title.value, author: e.target.author.value, color: e.target.color.value }); toast("Guardado."); route(); } catch (err) { fail(err); }
+    const f = e.target;
+    try {
+      await api("PATCH", `/api/books/${id}`, { title: f.title.value, author: f.author.value, color: f.color.value, publisher: f.publisher.value, language: f.language.value, section: f.section.value });
+      toast("Guardado."); route();
+    } catch (err) { fail(err); }
   });
   $("#archive").addEventListener("click", async () => {
     try {
@@ -955,6 +993,9 @@ async function viewLibro(id) {
   });
   $$("[data-copy]").forEach((btn) => btn.addEventListener("click", async () => {
     try { await api("PATCH", `/api/copies/${encodeURIComponent(btn.dataset.copy)}`, { archived: btn.dataset.archived === "1" }); route(); } catch (err) { fail(err); }
+  }));
+  $$("[data-note]").forEach((inp) => inp.addEventListener("change", async () => {
+    try { await api("PATCH", `/api/copies/${encodeURIComponent(inp.dataset.note)}`, { note: inp.value }); toast(`Nota guardada en ${inp.dataset.note}.`); } catch (err) { fail(err); }
   }));
   $("#add-copy")?.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -1142,10 +1183,11 @@ Joaquín Pereira;4°B</pre>
 
       <form class="panel" id="import-books">
         <h2>Cargar libros desde Excel</h2>
-        <p>Columnas: título, autor, ejemplares, color (azul, rojo o verde) y, si ya tienen, código. Los repetidos se saltean.</p>
-        <pre class="sample">Titulo;Autor;Ejemplares;Color;Codigo
-Cuentos de la selva;Horacio Quiroga;3;Rojo;
-Matilda;Roald Dahl;1;Rojo;B-0040</pre>
+        <p>Columnas: título, autor, editorial, idioma, sección, color (azul, rojo o verde), notas, ejemplares y, si ya tienen, código. Solo el título es obligatorio.</p>
+        <pre class="sample">Titulo;Autor;Editorial;Idioma;Color;Notas
+Cuentos de la selva;Horacio Quiroga;Santillana;Español;Rojo;
+Matilda;Roald Dahl;Puffin;Inglés;Verde;Donación familia Ferrand</pre>
+        <p class="muted" style="font-size:.9375rem">Un renglón por ejemplar: si el mismo libro aparece dos veces, son dos ejemplares (cada uno con sus notas). Los libros que ya estaban se saltean, así que cargar la misma planilla otra vez no duplica nada.</p>
         <label class="field"><span>Pegá las filas copiadas de Excel o Numbers</span><textarea class="input paste" name="paste" rows="4" placeholder="Matilda	Roald Dahl	1" data-testid="import-books-paste"></textarea></label>
         <label class="file-drop"><span class="field-label">…o elegí la planilla (Excel .xlsx o CSV)</span><input type="file" name="file" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" data-testid="import-books-file"></label>
         <div class="import-msg" aria-live="polite"></div>
@@ -1190,16 +1232,23 @@ Joaquín Pereira;4°B;B-0012;20/09/2026;04/10/2026;02/10/2026</pre>
       const file = e.target.file.files[0];
       const pasted = e.target.paste.value;
       if (!file && !pasted.trim()) { msg.innerHTML = `<div class="notice notice-error" role="alert">Pegá las filas o elegí un archivo primero.</div>`; return; }
+      // A whole catalogue takes a few seconds: say so before the work starts, and let the screen show it.
+      const btn = $("button[type=submit]", e.target);
+      btn.classList.add("is-busy");
+      msg.innerHTML = `<div class="notice" data-testid="import-busy"><p>Cargando… con una lista larga puede tardar unos segundos.</p></div>`;
+      await new Promise((r) => setTimeout(r, 50));
       try {
         const body = !file ? { text: pasted }
           : /\.xlsx$/i.test(file.name) ? { rows: await readXlsx(await file.arrayBuffer()) }
           : { text: await file.text() };
         const res = await api("POST", `/api/import/${kind}`, body);
-        msg.innerHTML = `<div class="notice ${res.errors.length ? "notice-warn" : "notice-ok"}" data-testid="import-result"><p>Cargué ${plural(res.added, one, many)}.${res.skipped ? ` ${res.skipped} ya estaban.` : ""}</p>
+        const copies = kind === "books" && res.copies !== res.added ? ` (${plural(res.copies, "ejemplar", "ejemplares")})` : "";
+        msg.innerHTML = `<div class="notice ${res.errors.length ? "notice-warn" : "notice-ok"}" data-testid="import-result"><p>Cargué ${plural(res.added, one, many)}${copies}.${res.skipped ? ` ${res.skipped} ya estaban.` : ""}</p>
           ${res.errors.length ? `<ul class="lines">${res.errors.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`;
         e.target.reset();
         refreshSummary();
       } catch (err) { msg.innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`; }
+      btn.classList.remove("is-busy");
     });
   }
   $("#import-loans").addEventListener("submit", async (e) => {
@@ -1288,7 +1337,7 @@ async function viewAyuda() {
       ])}
       ${card("cargar", "plus", "Agregar alumnos y libros", [
         "De a uno: en <strong>Libros</strong> o <strong>Alumnos</strong>, con el botón amarillo de arriba. A cada libro elegile su color: <strong>azul</strong> (0 a 7 años), <strong>rojo</strong> (7 a 10) o <strong>verde</strong> (10 a 12).",
-        "Todos juntos: en <strong>Ajustes</strong>, elegí la planilla de Excel desde Archivos (o pegá las filas) y tocá <strong>Cargar alumnos</strong> o <strong>Cargar libros</strong>. Si la planilla de libros tiene una columna <strong>Color</strong>, se usa.",
+        "Todos juntos: en <strong>Ajustes</strong>, elegí la planilla de Excel desde Archivos (o pegá las filas) y tocá <strong>Cargar alumnos</strong> o <strong>Cargar libros</strong>. De los libros se guardan también <strong>Color</strong>, <strong>Editorial</strong>, <strong>Idioma</strong>, <strong>Sección</strong> y las <strong>Notas</strong> de cada ejemplar.",
         "Los libros sin color se ven grises. En <strong>Libros</strong>, el filtro <strong>Sin color</strong> te muestra cuáles faltan.",
         "Nada se borra: un alumno que se fue se <strong>archiva</strong> desde su página. Si se rompe un ejemplar, en la página del libro tocá <strong>Dar de baja</strong> en su fila. Antes tienen que devolver lo que tengan prestado, y el historial queda.",
       ], ["#/ajustes", "Ir a Ajustes"])}

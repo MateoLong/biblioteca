@@ -281,7 +281,7 @@ try {
   await page.setInputFiles("[data-testid=import-books-file]", join(ROOT, "tests", "fixtures", "libros-excel.xlsx"));
   await page.tap("#import-books button[type=submit]");
   // Cuentos de la selva and Matilda (same author) already exist; only El "Principito" is new.
-  await page.waitForFunction(() => /Cargué 1 libro\. 2 ya estaban/.test(document.querySelector("#import-books [data-testid=import-result]")?.textContent || ""));
+  await page.waitForFunction(() => /Cargué 1 libro \(2 ejemplares\)\. 2 ya estaban/.test(document.querySelector("#import-books [data-testid=import-result]")?.textContent || ""));
   st = await saved();
   readback.xlsx = { nandu: studentNamed(st, "Ñandú O'Neil & Pérez")?.grade, sofia: studentNamed(st, "Sofía <la de 6>")?.grade,
     principito: st.copies.filter((c) => c.book_id === bookTitled(st, 'El "Principito"')?.id).length,
@@ -509,6 +509,40 @@ try {
     await cp.waitForTimeout(400);
     readback.setLent = (await saved(cp)).loans.find((l) => l.id === luc.id);
     check("lend-date", "typing 28/09 on the student's page saves 2026-09-28 (last month, not next year)", readback.setLent.lent_on === "2026-09-28" && readback.setLent.due_on === "2026-10-16", JSON.stringify(readback.setLent));
+    // ── F13 a catalogue with one row per copy: grouped into books, every column kept, filters, copy notes ──
+    await go("ajustes", cp);
+    await cp.setInputFiles("[data-testid=import-books-file]", join(ROOT, "tests", "fixtures", "libros-por-ejemplar.xlsx"));
+    await cp.tap("#import-books button[type=submit]");
+    await cp.waitForSelector("#import-books [data-testid=import-result]");
+    const catMsg = (await cp.textContent("#import-books [data-testid=import-result]")).replace(/\s+/g, " ").trim();
+    cs = await saved(cp);
+    const brujas = bookTitled(cs, "Las brujas");
+    readback.catalogue = { msg: catMsg, brujas: brujas && { publisher: brujas.publisher, language: brujas.language, color: brujas.color,
+      notes: cs.copies.filter((c) => c.book_id === brujas.id).map((c) => c.note) }, twits: bookTitled(cs, "The Twits")?.section };
+    check("catalogue", "two rows of the same book become one book with two copies", catMsg.includes("Cargué 3 libros (4 ejemplares)"), catMsg);
+    check("catalogue", "editorial, idioma, color and each copy's note are saved", brujas?.publisher === "Alfaguara / Alfaguara. Madrid, 2016" && brujas.language === "Español"
+      && brujas.color === "verde" && readback.catalogue.brujas.notes.join("|") === "Donación familia Ejemplo|Edición aniversario" && readback.catalogue.twits === "Roald Dahl", JSON.stringify(readback.catalogue));
+    await cp.setInputFiles("[data-testid=import-books-file]", join(ROOT, "tests", "fixtures", "libros-por-ejemplar.xlsx"));
+    await cp.tap("#import-books button[type=submit]");
+    await cp.waitForFunction(() => /4 ya estaban/.test(document.querySelector("#import-books [data-testid=import-result]")?.textContent || ""));
+    check("catalogue", "loading the same file again adds nothing", (await saved(cp)).copies.length === cs.copies.length);
+    await go("libros", cp);
+    await cp.tap("[data-testid=language-filter] a[data-language='Inglés']");
+    await cp.waitForFunction(() => location.hash.includes("idioma="));
+    const english = await cp.$$eval("[data-testid=books-table] tbody tr a", (as) => as.map((a) => a.textContent));
+    check("catalogue", "the Inglés chip lists only English books", english.join(",") === "The Twits", english.join(","));
+    await cp.selectOption("[data-testid=section-filter]", "Cómics");
+    await cp.waitForFunction(() => location.hash.includes("seccion="));
+    const comics = await cp.$$eval("[data-testid=books-table] tbody tr a, .empty-state h3", (as) => as.map((a) => a.textContent));
+    check("catalogue", "filters combine: Inglés + Cómics is empty and says so", comics.join(",") === "No hay libros con estos filtros", comics.join(","));
+    await go(`libros/${brujas.id}`, cp);
+    check("catalogue", "the book page shows its editorial and idioma", (await cp.textContent("[data-testid=book-publisher]")).includes("Alfaguara") && (await cp.textContent("[data-testid=book-language]")) === "Español");
+    const firstCode = cs.copies.find((c) => c.book_id === brujas.id).code;
+    await cp.fill(`[data-note="${firstCode}"]`, "Donación familia Ejemplo · forrado");
+    await cp.press(`[data-note="${firstCode}"]`, "Tab");
+    await cp.waitForTimeout(300);
+    check("catalogue", "a copy's note can be edited on the book page", (await saved(cp)).copies.find((c) => c.code === firstCode)?.note === "Donación familia Ejemplo · forrado");
+    await shot("13-libro-con-notas", true, cp);
     await cctx.close();
   }
 
