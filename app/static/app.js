@@ -899,7 +899,7 @@ async function viewLibros(params) {
     ${books.length ? `<div class="table-wrap"><table data-testid="books-table"><thead><tr><th>Título</th><th class="hide-sm">Autor</th><th>Disponibles</th></tr></thead>
       <tbody>${books.map((b) => `<tr data-hay="${esc([b.title, b.author, b.publisher, b.section, b.language].join(" ").toLowerCase())}">
         <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(b)}></span><span><a href="${bookHref(b.id)}">${esc(b.title)}</a>${b.archived ? ' <span class="pill pill-off">Archivado</span>' : ""}
-          ${b.section || b.language ? `<br><span class="book-meta">${esc([b.section, b.language].filter(Boolean).join(" · "))}</span>` : ""}</span></div></td>
+          ${b.section || b.language || b.publisher ? `<br><span class="book-meta" data-testid="book-meta">${esc([b.section, b.language, b.publisher].filter(Boolean).join(" · "))}</span>` : ""}</span></div></td>
         <td class="hide-sm">${esc(b.author)}</td>
         <td>${b.total ? `<span class="pill ${b.available ? "pill-ok" : "pill-out"}">${b.available} de ${b.total}</span>` : '<span class="muted">—</span>'}</td>
       </tr>`).join("")}</tbody></table></div>`

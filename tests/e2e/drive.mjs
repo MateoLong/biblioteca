@@ -531,6 +531,8 @@ try {
     await cp.waitForFunction(() => location.hash.includes("idioma="));
     const english = await cp.$$eval("[data-testid=books-table] tbody tr a", (as) => as.map((a) => a.textContent));
     check("catalogue", "the Inglés chip lists only English books", english.join(",") === "The Twits", english.join(","));
+    const meta = (await cp.textContent("[data-testid=books-table] [data-testid=book-meta]")).trim();
+    check("catalogue", "the list shows sección · idioma · editorial under the title", meta === "Roald Dahl · Inglés · Puffin Books", meta);
     await cp.selectOption("[data-testid=section-filter]", "Cómics");
     await cp.waitForFunction(() => location.hash.includes("seccion="));
     const comics = await cp.$$eval("[data-testid=books-table] tbody tr a, .empty-state h3", (as) => as.map((a) => a.textContent));
