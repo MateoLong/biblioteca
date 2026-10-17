@@ -635,6 +635,7 @@ async function viewClases(params) {
   sheet.dates = loanDates(sheet.dates, true);
   const asked = params.has("clase") ? params.get("clase") : sheet.grade;
   const data = await api("GET", `/api/sheet${asked != null ? `?grade=${encodeURIComponent(asked)}` : ""}`);
+  const history = data.tabs.length ? await api("GET", `/api/sheet/history?grade=${encodeURIComponent(data.grade)}`) : [];
   if (!data.tabs.length) {
     main.innerHTML = `<div class="page-head"><div><h1>Clases</h1></div></div>
       <div class="empty-state"><h3>Todavía no hay alumnos</h3><p>Cargá la lista de cada clase en <a href="#/ajustes">Ajustes</a> (desde Excel) o en <a href="#/alumnos">Alumnos</a>, y acá vas a tener una hoja por clase.</p></div>`;
@@ -654,7 +655,7 @@ async function viewClases(params) {
         <div class="sheet-date"><label class="label-key" for="s-due">Vuelve</label><div class="due-line">${dueField("s-due", sheet.dates)}</div></div>
         <p class="sheet-note" data-testid="sheet-note"></p>
       </div>
-      <div class="sheet-head" aria-hidden="true"><span>Alumno</span><span>Tiene ahora</span><span>Se lleva</span></div>
+      <div class="sheet-head" aria-hidden="true"><span></span><span>Alumno</span><span>Tiene ahora</span><span>Se lleva</span></div>
       <ol class="sheet-rows" data-testid="sheet-rows">
         ${data.students.map((s) => sheetRow(s)).join("")}
         <li class="sheet-row sheet-add">
@@ -662,7 +663,8 @@ async function viewClases(params) {
             <input class="input" id="sheet-new" name="name" placeholder="+ Agregar alumno${data.grade ? ` a ${esc(data.grade)}` : ""}" autocomplete="off" data-testid="sheet-add-student"></form>
         </li>
       </ol>
-    </section>`;
+    </section>
+    <section class="section" aria-labelledby="class-hist-h" data-testid="class-history">${classHistory(history)}</section>`;
 
   wireDates($("#sheet-dates"), sheet.dates, (d) => {
     $("[data-testid=sheet-note]").innerHTML = !d.lent ? "Escribí el día como 30/09. No puede ser después de hoy."
@@ -713,6 +715,14 @@ function wireSheetRow(li) {
   $$("[data-held]", li).forEach((b) => b.addEventListener("click", () => sheetReturn(li, id, b.dataset.held)));
 }
 
+function classHistory(rows) {
+  return `<h2 id="class-hist-h">Lo que leyó la clase <small>${plural(rows.length, "préstamo", "préstamos")}</small></h2>
+    ${historyTable(rows, "both", "Todavía nadie de esta clase se llevó un libro.")}`;
+}
+const redrawClassHistory = async () => {
+  $("[data-testid=class-history]").innerHTML = classHistory(await api("GET", `/api/sheet/history?grade=${encodeURIComponent(sheet.grade)}`));
+};
+
 // Redraw one student's row in place: the rest of the sheet (and anything typed in it) stays.
 async function redrawRow(li, id, fresh = null) {
   const s = await api("GET", `/api/students/${id}`);
@@ -735,6 +745,7 @@ async function sheetLend(li, id, code, force) {
     // Like Enter in Excel: on to the next child.
     const next = row.nextElementSibling?.matches("[data-student]") ? $("[data-testid=sheet-input]", row.nextElementSibling) : null;
     if (next) next.focus(); else document.activeElement?.blur();
+    redrawClassHistory();
     refreshSummary();
   } catch (err) {
     const d = err.data || {};
@@ -763,6 +774,7 @@ async function sheetReturn(li, id, code) {
   try {
     const loan = await api("POST", "/api/returns", { code, returned_on: sheet.dates.lent });
     await redrawRow(li, id);
+    redrawClassHistory();
     toast(`Devuelto: ${loan.title}${loan.returned_on !== TODAY ? ` (el ${fmtDay(loan.returned_on)})` : ""}`, { action: () => undoReturn(loan) });
     refreshSummary();
   } catch (err) { fail(err); }
@@ -786,9 +798,9 @@ async function viewAtrasados() {
       ${loans.length ? `<button type="button" class="btn btn-line no-print" onclick="window.print()">Imprimir lista</button>` : ""}
     </div>
     ${loans.length ? `<div class="table-wrap"><table class="stack-sm" data-testid="overdue-table">
-      <thead><tr><th>Libro</th><th>Alumno</th><th class="hide-sm">Clase</th><th>Venció</th><th class="num">Atraso</th><th class="actions"><span class="sr-only">Acciones</span></th></tr></thead>
+      <thead><tr>${ROW_N_HEAD}<th>Libro</th><th>Alumno</th><th class="hide-sm">Clase</th><th>Venció</th><th class="num">Atraso</th><th class="actions"><span class="sr-only">Acciones</span></th></tr></thead>
       <tbody>${loans.map((l) => `<tr class="is-late" data-loan="${l.id}">
-        <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span></span></div></td>
+        ${ROW_N}<td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span></span></div></td>
         <td><a class="student-link" href="${studentHref(l.student_id)}">${esc(l.student)}</a></td>
         <td class="hide-sm">${esc(l.grade)}</td>
         <td data-label="Venció">${fmtDay(l.due_on)}</td>
@@ -896,9 +908,9 @@ async function viewLibros(params) {
         ${summary.sections.map((x) => `<option value="${esc(x)}" ${sec === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></label>` : ""}
       <a class="btn btn-quiet" href="#/libros${showArchived ? "" : "?archivados=1"}">${showArchived ? "Ocultar archivados" : "Ver archivados"}</a>
     </div>
-    ${books.length ? `<div class="table-wrap"><table data-testid="books-table"><thead><tr><th>Título</th><th class="hide-sm">Autor</th><th>Disponibles</th></tr></thead>
+    ${books.length ? `<div class="table-wrap"><table data-testid="books-table"><thead><tr>${ROW_N_HEAD}<th>Título</th><th class="hide-sm">Autor</th><th>Disponibles</th></tr></thead>
       <tbody>${books.map((b) => `<tr data-hay="${esc([b.title, b.author, b.publisher, b.section, b.language].join(" ").toLowerCase())}">
-        <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(b)}></span><span><a href="${bookHref(b.id)}">${esc(b.title)}</a>${b.archived ? ' <span class="pill pill-off">Archivado</span>' : ""}
+        ${ROW_N}<td><div class="book-cell"><span class="forro swatch" ${forroAttrs(b)}></span><span><a href="${bookHref(b.id)}">${esc(b.title)}</a>${b.archived ? ' <span class="pill pill-off">Archivado</span>' : ""}
           ${b.section || b.language || b.publisher ? `<br><span class="book-meta" data-testid="book-meta">${esc([b.section, b.language, b.publisher].filter(Boolean).join(" · "))}</span>` : ""}</span></div></td>
         <td class="hide-sm">${esc(b.author)}</td>
         <td>${b.total ? `<span class="pill ${b.available ? "pill-ok" : "pill-out"}">${b.available} de ${b.total}</span>` : '<span class="muted">—</span>'}</td>
@@ -962,9 +974,9 @@ async function viewLibro(id) {
       <datalist id="sections">${summary.sections.map((v) => `<option value="${esc(v)}">`).join("")}</datalist></form>
     <section class="section" aria-labelledby="copies-h">
       <h2 id="copies-h">Ejemplares</h2>
-      <div class="table-wrap"><table class="stack-sm" data-testid="copies-table"><thead><tr><th>Código</th><th>Estado</th><th>Quién lo tiene</th><th>Notas</th><th class="actions"></th></tr></thead><tbody>
+      <div class="table-wrap"><table class="stack-sm" data-testid="copies-table"><thead><tr>${ROW_N_HEAD}<th>Código</th><th>Estado</th><th>Quién lo tiene</th><th>Notas</th><th class="actions"></th></tr></thead><tbody>
       ${b.copies.map((c) => `<tr class="${c.loan?.overdue ? "is-late" : ""}">
-        <td><strong>${esc(c.code)}</strong></td>
+        ${ROW_N}<td><strong>${esc(c.code)}</strong></td>
         <td>${statusPill(c, b.archived)}</td>
         <td>${c.loan ? `<a class="student-link" href="${studentHref(c.loan.student_id)}">${esc(c.loan.student)}</a> <span class="muted">${esc(c.loan.grade)} · ${c.loan.overdue ? `<span class="late-days">venció el ${fmtDay(c.loan.due_on)}</span>` : `vuelve ${fmtRel(c.loan.due_on)}`}</span>` : '<span class="muted">—</span>'}</td>
         <td class="note-cell"><input class="input note-edit" value="${esc(c.note)}" placeholder="donación, edición…" data-note="${esc(c.code)}" aria-label="Notas del ejemplar ${esc(c.code)}"></td>
@@ -1004,12 +1016,19 @@ async function viewLibro(id) {
   wireLoanActions();
 }
 
+// Every table numbers its rows down the left edge. The number is a CSS counter, so a row hidden by
+// the filter is skipped and what is left still reads 1, 2, 3.
+const ROW_N_HEAD = '<th class="row-n"><span class="sr-only">Número</span></th>';
+const ROW_N = '<td class="row-n"></td>';
+
+// who: the column naming the other side of each loan, "student", "book" or "both" (a class's history).
 function historyTable(rows, who, empty) {
   if (!rows.length) return `<p class="muted" data-testid="history-empty">${empty}</p>`;
-  return `<div class="table-wrap"><table class="stack-sm"><thead><tr><th>${who === "student" ? "Alumno" : "Libro"}</th><th>Prestado</th><th>Vuelve / volvió</th><th class="hide-sm">Estado</th></tr></thead><tbody>
+  const student = (l) => `<td><a class="student-link" href="${studentHref(l.student_id)}">${esc(l.student)}</a>${who === "both" ? "" : ` <span class="muted">${esc(l.grade)}</span>`}</td>`;
+  const book = (l) => `<td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)} style="width:20px;height:27px;${forro(l).style}"></span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a> <span class="code">${esc(l.code)}</span></div></td>`;
+  return `<div class="table-wrap"><table class="stack-sm"><thead><tr>${ROW_N_HEAD}${who === "book" ? "" : "<th>Alumno</th>"}${who === "student" ? "" : "<th>Libro</th>"}<th>Prestado</th><th>Vuelve / volvió</th><th class="hide-sm">Estado</th></tr></thead><tbody>
     ${rows.map((l) => `<tr>
-      <td>${who === "student" ? `<a class="student-link" href="${studentHref(l.student_id)}">${esc(l.student)}</a> <span class="muted">${esc(l.grade)}</span>`
-        : `<div class="book-cell"><span class="forro swatch" ${forroAttrs(l)} style="width:20px;height:27px;${forro(l).style}"></span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a> <span class="code">${esc(l.code)}</span></div>`}</td>
+      ${ROW_N}${who === "book" ? "" : student(l)}${who === "student" ? "" : book(l)}
       <td data-label="Prestado">${fmtDay(l.lent_on)}</td>
       <td data-label="${l.returned_on ? "Volvió" : "Vuelve"}">${l.returned_on ? fmtDay(l.returned_on) : fmtDay(l.due_on)}</td>
       <td class="hide-sm">${l.open ? (l.overdue ? '<span class="pill pill-late">Atrasado</span>' : '<span class="pill pill-out">Prestado</span>') : '<span class="pill pill-ok">Devuelto</span>'}</td>
@@ -1048,7 +1067,7 @@ async function viewAlumnos(params) {
       <h3>${esc(g)} <small>${plural(list.length, "alumno", "alumnos")} · ${plural(list.reduce((n, s) => n + s.open_loans, 0), "libro afuera", "libros afuera")}</small>
         <a class="btn btn-quiet btn-sm" href="${sheetHref(g === "Sin clase" ? "" : g)}">${icon("sheet")}Planilla</a></h3>
       <div class="table-wrap"><table><tbody>${list.map((s) => `<tr data-hay="${esc(s.name.toLowerCase())}">
-        <td><div class="book-cell"><span class="avatar" style="${studentColor(s.id)};width:34px;height:34px;font-size:.875rem">${esc(initials(s.name))}</span><a class="student-link" href="${studentHref(s.id)}">${esc(s.name)}</a>${s.archived ? ' <span class="pill pill-off">Archivado</span>' : ""}</div></td>
+        ${ROW_N}<td><div class="book-cell"><span class="avatar" style="${studentColor(s.id)};width:34px;height:34px;font-size:.875rem">${esc(initials(s.name))}</span><a class="student-link" href="${studentHref(s.id)}">${esc(s.name)}</a>${s.archived ? ' <span class="pill pill-off">Archivado</span>' : ""}</div></td>
         <td>${s.open_loans ? `<span class="pill ${s.overdue ? "pill-late" : "pill-out"}">${plural(s.open_loans, "libro", "libros")}${s.overdue ? ", con atraso" : ""}</span>` : '<span class="muted">Sin libros</span>'}</td>
         <td class="actions hide-sm"><a class="btn btn-quiet btn-sm" href="#/mostrador?alumno=${s.id}">Prestarle</a></td>
       </tr>`).join("")}</tbody></table></div></section>`).join("")
@@ -1099,9 +1118,9 @@ async function viewAlumno(id) {
       <label class="field"><span>Clase</span><input class="input" name="grade" value="${esc(s.grade)}"></label>
       <button class="btn btn-go" type="submit">Guardar</button></div></form>
     <section class="section" aria-labelledby="now-h"><h2 id="now-h">Libros en su poder</h2>
-      ${s.loans.length ? `<div class="table-wrap"><table class="stack-sm" data-testid="student-loans"><thead><tr><th>Libro</th><th>Prestado</th><th>Vuelve el</th><th class="actions"></th></tr></thead><tbody>
+      ${s.loans.length ? `<div class="table-wrap"><table class="stack-sm" data-testid="student-loans"><thead><tr>${ROW_N_HEAD}<th>Libro</th><th>Prestado</th><th>Vuelve el</th><th class="actions"></th></tr></thead><tbody>
         ${s.loans.map((l) => `<tr class="${l.overdue ? "is-late" : ""}">
-          <td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span>${l.overdue ? ` <span class="late-days">· ${plural(l.days_late, "día", "días")} de atraso</span>` : ""}</span></div></td>
+          ${ROW_N}<td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span>${l.overdue ? ` <span class="late-days">· ${plural(l.days_late, "día", "días")} de atraso</span>` : ""}</span></div></td>
           <td data-label="Prestado"><input class="line-input hand due-edit" value="${fmtDM(l.lent_on)}" inputmode="numeric" data-lent="${l.id}" aria-label="Día que se prestó ${esc(l.title)}, día y mes"></td>
           <td data-label="Vuelve"><input class="line-input hand due-edit" value="${fmtDM(l.due_on)}" inputmode="numeric" data-due="${l.id}" data-from="${l.lent_on}" aria-label="Fecha de vuelta de ${esc(l.title)}, día y mes"></td>
           <td class="actions"><button type="button" class="btn btn-quiet btn-sm" data-renew="${l.id}">${icon("rotate-cw")}Renovar</button>

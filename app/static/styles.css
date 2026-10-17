@@ -509,7 +509,14 @@ pre.sample { margin: 0; background: var(--ground); border-radius: var(--r-sm); p
 .sheet-dates .due-chips { margin-left: 0; }
 /* not today: the day word becomes a sunflower sticker, at the counter and on the sheet */
 .is-earlier-day [data-day="lent"] { background: var(--girasol); color: var(--ink); border-radius: 999px; padding: 0 10px; margin-bottom: 6px; }
-.sheet-head, .sheet-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(0, 1.7fr) minmax(200px, 1.1fr); gap: 8px 18px; padding: 10px 20px; }
+.sheet-head, .sheet-row { display: grid; grid-template-columns: 24px minmax(150px, 1fr) minmax(0, 1.7fr) minmax(200px, 1.1fr); gap: 8px 18px; padding: 10px 20px; }
+/* row numbers down the left edge; a counter, so a student added at the bottom gets the next one */
+.sheet-rows { counter-reset: row; }
+.sheet-row[data-student]::before { counter-increment: row; content: counter(row); }
+tbody { counter-reset: row; }
+td.row-n::before { counter-increment: row; content: counter(row); }
+.sheet-row[data-student]::before, .row-n { font-family: var(--font-ui); font-size: .875rem; color: var(--ink-2); text-align: right; font-variant-numeric: tabular-nums; }
+th.row-n, td.row-n { width: 1%; padding-right: 0; }
 .sheet-head { font-family: var(--font-ui); font-weight: 700; font-size: .9375rem; color: var(--ink-2); padding-bottom: 6px; }
 .sheet-rows { list-style: none; margin: 0; padding: 0; }
 .sheet-row { align-items: center; border-top: 1px solid var(--line); transition: background-color .15s var(--ease-out); }
@@ -528,9 +535,10 @@ pre.sample { margin: 0; background: var(--ground); border-radius: var(--r-sm); p
 .held.is-late small { color: var(--tomate-ink); font-weight: 700; }
 .held.is-new { border-color: var(--moña); animation: tile-in .45s var(--ease-out) both; }
 .sheet-take .line-input { font-size: 1.375rem; min-height: 42px; }
-.sheet-msg { grid-column: 1 / -1; }
+.sheet-msg { grid-column: 2 / -1; }
 .sheet-msg:empty { display: none; }
-.sheet-add { grid-template-columns: minmax(0, 420px); }
+.sheet-add { grid-template-columns: 24px minmax(0, 420px); }
+.sheet-add > * { grid-column: 2; }
 .sheet-add .input { border-style: dashed; }
 
 /* ── narrower screens ──────────────────────────────────────────── */
@@ -587,6 +595,8 @@ pre.sample { margin: 0; background: var(--ground); border-radius: var(--r-sm); p
   .stack-sm tbody tr + tr { border-top: 1px solid var(--line); }
   .stack-sm td { padding: 0; border: 0 !important; background: none !important; }
   .stack-sm td:first-child, .stack-sm td.actions { flex: 1 1 100%; text-align: left; }
+  .stack-sm td.row-n { flex: 0 0 auto; width: auto; }
+  .stack-sm td.row-n + td { flex: 1 1 calc(100% - 40px); }
   .stack-sm td[data-label]::before { content: attr(data-label) " "; color: var(--ink-2); font-size: .875rem; }
   .stack-sm .hide-sm { display: none; }
   .switch { justify-self: stretch; }
@@ -594,8 +604,10 @@ pre.sample { margin: 0; background: var(--ground); border-radius: var(--r-sm); p
   .sheet-tabs a { padding: 6px 12px; font-size: 1rem; }
   .sheet-dates { grid-template-columns: 1fr; padding: 12px 14px; }
   .sheet-head { display: none; }
-  .sheet-row { grid-template-columns: 1fr; gap: 8px; padding: 12px 14px; }
-  .sheet-add { grid-template-columns: 1fr; }
+  .sheet-row { grid-template-columns: 20px 1fr; gap: 8px 10px; padding: 12px 14px; }
+  .sheet-row > * { grid-column: 2; }
+  .sheet-row[data-student]::before { grid-row: 1; align-self: baseline; }
+  .sheet-add { grid-template-columns: 20px 1fr; }
   .switch button { padding: 10px 12px; }
 }
 

@@ -245,6 +245,10 @@ try {
   const wantRed = (await saved()).books.filter((b) => !b.archived && b.color === "rojo").length;
   check("color", "the Rojo filter lists exactly the red books", redRows.length === wantRed && redRows.every((c) => c === "rojo"), `${redRows.length} shown, ${wantRed} saved`);
   await shot("08b-libros-rojo");
+  await go("libros");
+  await page.fill("#filter", "dahl");
+  await page.waitForFunction(() => document.querySelector("[data-testid=books-table] tbody tr[hidden]"));
+  await shot("08c-libros-filtro-numerado", false);
   await go(`libros/${corazon.id}`);
   check("hints", "a book nobody took yet says where to lend it", (await page.textContent("[data-testid=history-empty]")).includes("Se presta desde el Mostrador"));
 
@@ -422,6 +426,11 @@ try {
     cs = await saved(cp);
     const mat = loansOf(cs, "Martina López").find((l) => titleOf(cs, l) === "Matilda" && l.lent_on === "2026-09-30");
     check("clases", "'Devolvió' returns it on the sheet's day, not today", mat?.returned_on === "2026-09-30", JSON.stringify(mat));
+    const hist = await cp.$$eval("[data-testid=class-history] tbody tr", (trs) => trs.map((tr) => [...tr.cells].map((td) => td.textContent).join(" ").replace(/\s+/g, " ").trim()));
+    check("clases", "the class history under the sheet shows that return at once",
+      hist.some((t) => /Martina López Matilda .* 30\/09 Devuelto$/.test(t)), hist.slice(0, 3).join(" | "));
+    const nums = await cp.$$eval("[data-testid=sheet-row]", (lis) => lis.map((li) => getComputedStyle(li, "::before").content));
+    check("clases", "every row of the sheet carries a row number", nums.length === 3 && nums.every((c) => c === "counter(row)"), nums.join(","));
     await shot("12-clases-4B", true, cp);
 
     await cp.tap(".toast:has-text('Prestado: Ruperto') .btn");
@@ -561,6 +570,11 @@ try {
       await go(r, demoCtx.page);
       const sw = await demoCtx.page.evaluate(() => document.documentElement.scrollWidth);
       check("layout", `#/${r} fits ${width}px portrait`, sw <= width, `scrollWidth ${sw}`);
+      if (width === 820) {
+        const unnumbered = await demoCtx.page.$$eval("table tbody tr", (trs) => trs.filter((tr) => !tr.cells[0]?.matches(".row-n")).length);
+        const tables = await demoCtx.page.$$eval("table", (ts) => ts.length);
+        if (tables) check("numbers", `#/${r}: every table row starts with its number`, unnumbered === 0, `${tables} tables, ${unnumbered} rows without a number`);
+      }
       if (width === 820) await shot(`p-${r.replace(/[/?=%]/g, "-")}`, true, demoCtx.page);
     }
   }

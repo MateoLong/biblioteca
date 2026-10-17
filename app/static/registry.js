@@ -558,6 +558,13 @@ export class Registry {
     return { grade: key ? (students[0]?.grade || tidyGrade(grade)) : "", tabs, students };
   }
 
+  /** Every loan the students of one class have had, newest first. Archived students keep theirs. */
+  classHistory(grade = "") {
+    const key = gradeKey(grade);
+    const ids = new Set(this.state.students.filter((s) => (key ? gradeKey(s.grade) === key : !s.grade)).map((s) => s.id));
+    return this._sortedLoans(this.state.loans.filter((l) => ids.has(l.student_id)));
+  }
+
   /**
    * Answer whatever she typed in the question box. Recognises a few intents
    * ("atrasados", "hoy", "más leídos", a class like "4°B") and otherwise searches

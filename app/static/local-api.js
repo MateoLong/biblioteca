@@ -92,6 +92,7 @@ const ROUTES = [
   ["POST", /^\/api\/loans\/(\d+)\/renew$/, (q, b, id) => registry.renew(id)],
   ["PATCH", /^\/api\/loans\/(\d+)$/, (q, b, id) => ("lent_on" in b ? registry.setLentOn(id, b.lent_on || "") : registry.setDue(id, b.due_on || ""))],
   ["GET", /^\/api\/sheet$/, (q) => registry.classSheet(q.has("grade") ? q.get("grade") : null)],
+  ["GET", /^\/api\/sheet\/history$/, (q) => registry.classHistory(q.get("grade") || "")],
   ["GET", /^\/api\/books$/, (q) => registry.books(q.get("archived") === "1")],
   ["POST", /^\/api\/books$/, (q, b) => registry.addBook(b.title || "", b.author || "", Number(b.copies) || 1,
     String(b.codes || "").split(/[\s,]+/).filter(Boolean), false, b.color || "", { publisher: b.publisher, language: b.language, section: b.section })],

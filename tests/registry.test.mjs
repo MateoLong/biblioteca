@@ -144,6 +144,18 @@ test("the class sheet has a tab per class and a row per student in the order the
   assert.equal(r.classSheet("4°B").students.length, 2, "archived students leave the sheet");
 });
 
+test("a class's history has every loan its students had, newest first, archived students included", () => {
+  const ana = r.addStudent("Ana Álvarez", "4°B");
+  r.lend("B-0001", joaquin.id, null, false, "2026-09-25");
+  r.returnCopy("B-0001", "2026-09-30");
+  r.lend("B-0001", ana.id, null, false, "2026-09-30");
+  r.returnCopy("B-0001", "2026-10-01");
+  r.setStudentArchived(ana.id, true);
+  assert.deepEqual(r.classHistory("4 b").map((l) => [l.student, l.lent_on, l.returned_on]),
+    [["Ana Álvarez", "2026-09-30", "2026-10-01"], ["Joaquín Pereira", "2026-09-25", "2026-09-30"]]);
+  assert.deepEqual(r.classHistory("3°B"), []);
+});
+
 test("a typed day without a year is read the way she means it", () => {
   // return dates: on or after the lent day
   assert.equal(typedDay("17/10", "2026-10-03"), "2026-10-17");
