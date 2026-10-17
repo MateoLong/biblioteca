@@ -514,8 +514,54 @@ export class Registry {
     const day = this._pastDay(lentOn, "del préstamo");
     if (day > loan.due_on) throw new RegistryError("invalid", `El préstamo no puede ser después de la fecha de vuelta (${dmy(loan.due_on)}).`);
     if (loan.returned_on != null && day > loan.returned_on) throw new RegistryError("invalid", `El préstamo no puede ser después de la devolución (${dmy(loan.returned_on)}).`);
+    this._clashCheck(loan.copy_id, day, loan.returned_on, loan.id);
     this._write((s) => { s.loans.find((l) => l.id === loan.id).lent_on = day; });
     return this.loan(loanId);
+  }
+
+  /** Fix the day a returned book came back. */
+  setReturnedOn(loanId, returnedOn) {
+    const loan = this._requireLoan(loanId);
+    if (loan.returned_on == null) throw new RegistryError("invalid", "Ese préstamo todavía no volvió.");
+    const day = this._pastDay(returnedOn, "de devolución");
+    if (day < loan.lent_on) throw new RegistryError("invalid", `No puede volver antes de prestarse (${dmy(loan.lent_on)}).`);
+    this._clashCheck(loan.copy_id, loan.lent_on, day, loan.id);
+    this._write((s) => { s.loans.find((l) => l.id === loan.id).returned_on = day; });
+    return this.loan(loanId);
+  }
+
+  /** The loan was written down with the wrong copy: it was this one. */
+  setLoanCopy(loanId, code) {
+    const loan = this._requireLoan(loanId);
+    const copy = this._requireCopy(code);
+    if (copy.id === loan.copy_id) return this.loan(loanId);
+    if (loan.returned_on == null && (copy.archived || this._requireBook(copy.book_id).archived)) {
+      throw new RegistryError("archived", `El ejemplar ${copy.code} está dado de baja.`);
+    }
+    this._clashCheck(copy.id, loan.lent_on, loan.returned_on, loan.id);
+    this._write((s) => { s.loans.find((l) => l.id === loan.id).copy_id = copy.id; });
+    return this.loan(loanId);
+  }
+
+  /** A loan that never happened, out or returned. The only way a loan leaves the history. */
+  deleteLoan(loanId) {
+    const gone = this.loan(loanId);
+    this._write((s) => { s.loans = s.loans.filter((l) => l.id !== gone.id); });
+    return gone;
+  }
+
+  /**
+   * One copy is in one pair of hands at a time: refuse a loan of copyId from lent to returned
+   * (null: still out) that overlaps another of its loans. Back and out again the same day is fine.
+   */
+  _clashCheck(copyId, lent, returned, exceptId) {
+    const end = (d) => d ?? "9999-12-31";
+    const other = this.state.loans.find((l) => l.copy_id === copyId && l.id !== exceptId && lent < end(l.returned_on) && l.lent_on < end(returned));
+    if (!other) return;
+    const o = this._present(other);
+    throw new RegistryError("copy_on_loan", other.returned_on == null
+      ? `El ejemplar ${o.code} figura prestado a ${o.student} desde el ${dmy(o.lent_on)}.`
+      : `El ejemplar ${o.code} lo tenía ${o.student} del ${dmy(o.lent_on)} al ${dmy(o.returned_on)}.`);
   }
 
   /** Give the loan another full period counted from today. */
@@ -609,7 +655,7 @@ export class Registry {
       const b = this.state.books.find((x) => x.id === c.book_id);
       if (c.archived || b.archived) continue;
       const loan = this._openLoanForCopy(c.id);
-      if (Boolean(loan) !== (mode === "return")) continue;
+      if (mode !== "any" && Boolean(loan) !== (mode === "return")) continue;
       const s = loan ? this.state.students.find((x) => x.id === loan.student_id) : null;
       const row = { code: c.code, book_id: b.id, title: b.title, author: b.author, color: b.color, loan_id: loan?.id ?? null,
         student: s?.name ?? null, grade: s?.grade ?? null, due_on: loan?.due_on ?? null };

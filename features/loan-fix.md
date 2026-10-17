@@ -1,0 +1,4 @@
+# Corregir un préstamo
+Path: Alumnos → the student → "Corregir" on a book in "Libros en su poder" or on any row of "Lo que leyó" → a panel opens under that row.
+End state: "Era otro libro" + pick a title or code → the loan points at that copy, same dates. "Prestado" / "Volvió" typed as 30/09 → saved on the loan. "No lo devolvió" → returned_on is cleared and the book is back in "Libros en su poder". "Borrar préstamo" → "Sí, borrarlo" → the loan is gone from the history.
+Edge: a copy is never in two hands on the same days: a copy, lent day or return day that overlaps another loan of that copy is refused, naming who had it. A book still out can only move to a free copy. Dates after today, or a return before the lent day, are refused. "No lo devolvió" is refused if the copy was lent again since. Borrar asks first and nothing changes until "Sí, borrarlo".

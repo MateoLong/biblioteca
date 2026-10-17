@@ -849,6 +849,59 @@ function wireLoanActions(root = main) {
       route();
     } catch (err) { fail(err); }
   }));
+  $$("[data-returned]", root).forEach((inp) => inp.addEventListener("change", async () => {
+    const day = parseDM(inp.value, { past: true });
+    if (day && day === inp.dataset.saved) return; // one save per edit
+    if (day) inp.dataset.saved = day;
+    if (!day) { inp.setAttribute("aria-invalid", "true"); toast("No entendí la fecha. Escribila como 30/09.", { error: true }); return; }
+    try {
+      const loan = await api("PATCH", `/api/loans/${inp.dataset.returned}`, { returned_on: day });
+      toast(`${loan.title}: volvió el ${fmtDay(loan.returned_on)}.`);
+      route();
+    } catch (err) { fail(err); }
+  }));
+  $$("[data-fix]", root).forEach((b) => b.addEventListener("click", () => {
+    const panel = $(`#fix-${b.dataset.fix}`);
+    panel.hidden = !panel.hidden;
+    b.setAttribute("aria-expanded", String(!panel.hidden));
+    if (!panel.hidden) $("[data-fix-copy]", panel).focus();
+  }));
+  $$("[data-fix-copy]", root).forEach((input) => combobox(input, {
+    // A book still out moves to a free copy; an old loan can name any copy, checked against its dates.
+    fetcher: (q) => api("GET", `/api/suggest/copies?mode=${input.dataset.out === "1" ? "lend" : "any"}&q=${encodeURIComponent(q)}`),
+    render: (c) => `<span class="forro swatch" ${forroAttrs(c)}></span>
+      <span><span class="opt-main">${esc(c.title)}</span> <span class="code">${esc(c.code)}</span><br><span class="opt-sub">${esc(c.student ? `ahora lo tiene ${c.student}` : c.author || "")}</span></span>`,
+    emptyText: (q) => `No encontré «${q}».`,
+    onPick: async (c) => {
+      try {
+        const loan = await api("PATCH", `/api/loans/${input.dataset.fixCopy}`, { code: c.code });
+        toast(`Corregido: era ${loan.title} (${loan.code}).`);
+        route();
+      } catch (err) { $(".loan-fix-msg", input.closest(".loan-fix")).innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`; }
+    },
+  }));
+  $$("[data-reopen]", root).forEach((b) => b.addEventListener("click", async () => {
+    try {
+      const loan = await api("POST", `/api/loans/${b.dataset.reopen}/undo-return`);
+      toast(`Listo, ${loan.title} figura otra vez prestado a ${loan.student}.`);
+      route();
+    } catch (err) { $(".loan-fix-msg", b.closest(".loan-fix")).innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`; }
+  }));
+  $$("[data-delete]", root).forEach((b) => b.addEventListener("click", () => {
+    const msg = $(".loan-fix-msg", b.closest(".loan-fix"));
+    msg.innerHTML = `<div class="notice notice-warn" role="alert" data-testid="delete-confirm"><p>¿Borrar el préstamo de ${esc(b.dataset.what)}? Desaparece del historial.</p>
+      <div class="row"><button type="button" class="btn btn-line btn-sm btn-danger" data-act="yes">Sí, borrarlo</button>
+      <button type="button" class="btn btn-quiet btn-sm" data-act="no">Cancelar</button></div></div>`;
+    $("[data-act=no]", msg).addEventListener("click", () => { msg.innerHTML = ""; });
+    $("[data-act=yes]", msg).addEventListener("click", async () => {
+      try {
+        const loan = await api("DELETE", `/api/loans/${b.dataset.delete}`, { mistake: true });
+        toast(`Borrado: ${loan.title} ya no figura en lo que leyó ${loan.student}.`);
+        route();
+      } catch (err) { fail(err); }
+    });
+    $("[data-act=yes]", msg).focus();
+  }));
 }
 
 // ══ LIBROS ═════════════════════════════════════════════════════════════
@@ -1022,17 +1075,34 @@ const ROW_N_HEAD = '<th class="row-n"><span class="sr-only">Número</span></th>'
 const ROW_N = '<td class="row-n"></td>';
 
 // who: the column naming the other side of each loan, "student", "book" or "both" (a class's history).
-function historyTable(rows, who, empty) {
+// fixable adds a "Corregir" button to each row (see loanFix).
+function historyTable(rows, who, empty, fixable = false) {
   if (!rows.length) return `<p class="muted" data-testid="history-empty">${empty}</p>`;
   const student = (l) => `<td><a class="student-link" href="${studentHref(l.student_id)}">${esc(l.student)}</a>${who === "both" ? "" : ` <span class="muted">${esc(l.grade)}</span>`}</td>`;
   const book = (l) => `<td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)} style="width:20px;height:27px;${forro(l).style}"></span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a> <span class="code">${esc(l.code)}</span></div></td>`;
-  return `<div class="table-wrap"><table class="stack-sm"><thead><tr>${ROW_N_HEAD}${who === "book" ? "" : "<th>Alumno</th>"}${who === "student" ? "" : "<th>Libro</th>"}<th>Prestado</th><th>Vuelve / volvió</th><th class="hide-sm">Estado</th></tr></thead><tbody>
+  return `<div class="table-wrap"><table class="stack-sm"><thead><tr>${ROW_N_HEAD}${who === "book" ? "" : "<th>Alumno</th>"}${who === "student" ? "" : "<th>Libro</th>"}<th>Prestado</th><th>Vuelve / volvió</th><th class="hide-sm">Estado</th>${fixable ? '<th class="actions"><span class="sr-only">Corregir</span></th>' : ""}</tr></thead><tbody>
     ${rows.map((l) => `<tr>
       ${ROW_N}${who === "book" ? "" : student(l)}${who === "student" ? "" : book(l)}
       <td data-label="Prestado">${fmtDay(l.lent_on)}</td>
       <td data-label="${l.returned_on ? "Volvió" : "Vuelve"}">${l.returned_on ? fmtDay(l.returned_on) : fmtDay(l.due_on)}</td>
       <td class="hide-sm">${l.open ? (l.overdue ? '<span class="pill pill-late">Atrasado</span>' : '<span class="pill pill-out">Prestado</span>') : '<span class="pill pill-ok">Devuelto</span>'}</td>
-    </tr>`).join("")}</tbody></table></div>`;
+      ${fixable ? `<td class="actions">${fixButton(l)}</td>` : ""}
+    </tr>${fixable ? loanFix(l, true) : ""}`).join("")}</tbody></table></div>`;
+}
+
+// "Corregir" opens a panel under the loan's row to fix what was written down wrong: the copy,
+// the dates, a return that did not happen, or a loan that never happened at all.
+const fixButton = (l) => `<button type="button" class="btn btn-quiet btn-sm" data-fix="${l.id}" aria-expanded="false" aria-controls="fix-${l.id}">Corregir</button>`;
+function loanFix(l, dates) {
+  const field = (label, attr, iso, more = "") => `<label class="field"><span>${label}</span><input class="line-input hand due-edit" value="${fmtDM(iso)}" inputmode="numeric" ${attr}="${l.id}" ${more} aria-label="${label} ${esc(l.title)}, día y mes"></label>`;
+  return `<tr class="loan-fix" id="fix-${l.id}" hidden data-testid="loan-fix"><td colspan="9"><div class="loan-fix-body">
+    <div class="field combo"><label for="fix-copy-${l.id}">Era otro libro</label>
+      <input class="input" id="fix-copy-${l.id}" placeholder="título o código" data-fix-copy="${l.id}" data-out="${l.open ? 1 : 0}"></div>
+    ${dates ? field("Prestado", "data-lent", l.lent_on) + (l.open ? field("Vuelve", "data-due", l.due_on, `data-from="${l.lent_on}"`) : field("Volvió", "data-returned", l.returned_on)) : ""}
+    <div class="loan-fix-acts">${l.open ? "" : `<button type="button" class="btn btn-line btn-sm" data-reopen="${l.id}">No lo devolvió</button>`}
+      <button type="button" class="btn btn-quiet btn-sm btn-danger" data-delete="${l.id}" data-what="${esc(`${l.title} (${l.code}) a ${l.student}, el ${fmtDay(l.lent_on)}`)}">Borrar préstamo</button></div>
+    <div class="loan-fix-msg"></div>
+  </div></td></tr>`;
 }
 
 // ══ ALUMNOS ════════════════════════════════════════════════════════════
@@ -1124,10 +1194,10 @@ async function viewAlumno(id) {
           <td data-label="Prestado"><input class="line-input hand due-edit" value="${fmtDM(l.lent_on)}" inputmode="numeric" data-lent="${l.id}" aria-label="Día que se prestó ${esc(l.title)}, día y mes"></td>
           <td data-label="Vuelve"><input class="line-input hand due-edit" value="${fmtDM(l.due_on)}" inputmode="numeric" data-due="${l.id}" data-from="${l.lent_on}" aria-label="Fecha de vuelta de ${esc(l.title)}, día y mes"></td>
           <td class="actions"><button type="button" class="btn btn-quiet btn-sm" data-renew="${l.id}">${icon("rotate-cw")}Renovar</button>
-            <button type="button" class="btn btn-line btn-sm" data-return="${esc(l.code)}">Devolver</button></td>
-        </tr>`).join("")}</tbody></table></div>` : `<p class="muted">No tiene libros prestados.</p>`}
+            <button type="button" class="btn btn-line btn-sm" data-return="${esc(l.code)}">Devolver</button>${fixButton(l)}</td>
+        </tr>${loanFix(l, false)}`).join("")}</tbody></table></div>` : `<p class="muted">No tiene libros prestados.</p>`}
     </section>
-    <section class="section" aria-labelledby="hist-h"><h2 id="hist-h">Lo que leyó <small>${plural(s.history.length, "préstamo", "préstamos")}</small></h2>${historyTable(s.history, "book", s.archived ? "Nunca se llevó un libro." : "Todavía no se llevó ningún libro. Prestale uno con el botón amarillo de arriba.")}</section>`;
+    <section class="section" aria-labelledby="hist-h"><h2 id="hist-h">Lo que leyó <small>${plural(s.history.length, "préstamo", "préstamos")}</small></h2>${historyTable(s.history, "book", s.archived ? "Nunca se llevó un libro." : "Todavía no se llevó ningún libro. Prestale uno con el botón amarillo de arriba.", true)}</section>`;
 
   $("#edit-toggle").addEventListener("click", () => { $("#edit-form").hidden = !$("#edit-form").hidden; });
   $("#edit-form").addEventListener("submit", async (e) => {

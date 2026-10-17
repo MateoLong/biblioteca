@@ -49,7 +49,7 @@ _Avoid_: grupo, curso, grado (as separate ideas)
 ## Lending
 
 **Préstamo**:
-One Ejemplar in the hands of one Alumno from a lent date until its Devolución. It stays in the history forever.
+One Ejemplar in the hands of one Alumno from a lent date until its Devolución. It stays in the history forever, unless she deletes one that never happened.
 _Avoid_: retiro, salida
 
 **Planilla**:

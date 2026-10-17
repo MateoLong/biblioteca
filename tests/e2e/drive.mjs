@@ -330,6 +330,50 @@ try {
   check("due-date", "one save, one toast", (await page.$$eval(".toast", (ts) => ts.filter((t) => t.textContent.includes("Nueva fecha")).length)) === 1);
   await shot("10-alumno-detalle");
 
+  // ── F9b fix a loan written down wrong, from the student page ──
+  {
+    const mine = (state) => state.loans.filter((l) => l.student_id === studentNamed(state, "Martina López").id);
+    let ms = await saved();
+    const back = mine(ms).find((l) => l.returned_on != null);
+    await page.tap(`button[data-fix="${back.id}"]`);
+    await page.waitForSelector(`#fix-${back.id}:not([hidden])`);
+    const [, m, d] = back.lent_on.split("-");
+    await page.fill(`#fix-${back.id} input[data-returned]`, `${d}/${m}`);
+    await page.press(`#fix-${back.id} input[data-returned]`, "Tab");
+    await page.waitForFunction(([id, day]) => globalThis.__biblio.saved().then((st) => st.loans.find((l) => l.id === id).returned_on === day), [back.id, back.lent_on]);
+    check("loan-fix", "Corregir → Volvió fixes the day a returned book came back", (await saved()).loans.find((l) => l.id === back.id).returned_on === back.lent_on, `${back.returned_on} → ${back.lent_on}`);
+
+    ms = await saved();
+    const out = mine(ms).find((l) => l.returned_on == null);
+    const before = copyOf(ms, out.copy_id).code;
+    await page.tap(`[data-testid=student-loans] button[data-fix="${out.id}"]`);
+    await page.fill(`#fix-${out.id} input[data-fix-copy]`, "principito");
+    await page.waitForSelector(`#fix-${out.id} li[data-i]`);
+    const picked = await page.textContent(`#fix-${out.id} li[data-i="0"] .code`);
+    await page.keyboard.press("Enter");
+    await page.waitForSelector(".toast:has-text('Corregido')");
+    ms = await saved();
+    const moved = ms.loans.find((l) => l.id === out.id);
+    check("loan-fix", "'Era otro libro' moves a loan still out to the copy she picks, same dates", copyOf(ms, moved.copy_id).code === picked && moved.lent_on === out.lent_on && moved.returned_on == null, `${before} → ${copyOf(ms, moved.copy_id).code}`);
+    await shot("10b-alumno-corregir");
+
+    await page.tap(`[data-testid=student-loans] button[data-fix="${out.id}"]`);
+    await page.tap(`#fix-${out.id} [data-delete]`);
+    await page.waitForSelector(`#fix-${out.id} [data-testid=delete-confirm]`);
+    await shot("10c-alumno-borrar", false);
+    check("loan-fix", "Borrar asks first and changes nothing yet", (await saved()).loans.some((l) => l.id === out.id));
+    await page.tap(`#fix-${out.id} [data-act=yes]`);
+    await page.waitForSelector(".toast:has-text('Borrado')");
+    check("loan-fix", "'Sí, borrarlo' takes the loan out of the history", !(await saved()).loans.some((l) => l.id === out.id));
+
+    ms = await saved();
+    const reopenable = mine(ms).find((l) => l.returned_on != null && !ms.loans.some((o) => o.copy_id === l.copy_id && o.returned_on == null));
+    await page.tap(`button[data-fix="${reopenable.id}"]`);
+    await page.tap(`#fix-${reopenable.id} [data-reopen]`);
+    await page.waitForSelector(".toast:has-text('figura otra vez prestado')");
+    check("loan-fix", "'No lo devolvió' puts a returned book back in her hands", (await saved()).loans.find((l) => l.id === reopenable.id).returned_on == null);
+  }
+
   // ── F10 files: Excel export, backup, restore onto an empty iPad ──
   await go("ajustes");
   const [xlDl] = await Promise.all([page.waitForEvent("download"), page.tap("[data-download=loans]")]);
@@ -571,7 +615,7 @@ try {
       const sw = await demoCtx.page.evaluate(() => document.documentElement.scrollWidth);
       check("layout", `#/${r} fits ${width}px portrait`, sw <= width, `scrollWidth ${sw}`);
       if (width === 820) {
-        const unnumbered = await demoCtx.page.$$eval("table tbody tr", (trs) => trs.filter((tr) => !tr.cells[0]?.matches(".row-n")).length);
+        const unnumbered = await demoCtx.page.$$eval("table tbody tr:not(.loan-fix)", (trs) => trs.filter((tr) => !tr.cells[0]?.matches(".row-n")).length);
         const tables = await demoCtx.page.$$eval("table", (ts) => ts.length);
         if (tables) check("numbers", `#/${r}: every table row starts with its number`, unnumbered === 0, `${tables} tables, ${unnumbered} rows without a number`);
       }

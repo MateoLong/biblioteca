@@ -86,11 +86,14 @@ const ROUTES = [
   ["GET", /^\/api\/suggest\/copies$/, (q) => registry.suggestCopies(q.get("q") || "", q.get("mode") || "lend")],
   ["GET", /^\/api\/loans$/, (q) => (q.get("filter") === "overdue" ? registry.overdue() : registry.openLoans())],
   ["POST", /^\/api\/loans$/, (q, b) => registry.lend(b.code || "", Number(b.student_id) || 0, b.due_on, Boolean(b.force), b.lent_on || null)],
-  ["DELETE", /^\/api\/loans\/(\d+)$/, (q, b, id) => registry.undoLend(id)],
+  ["DELETE", /^\/api\/loans\/(\d+)$/, (q, b, id) => (b.mistake ? registry.deleteLoan(id) : registry.undoLend(id))],
   ["POST", /^\/api\/returns$/, (q, b) => registry.returnCopy(b.code || "", b.returned_on || null)],
   ["POST", /^\/api\/loans\/(\d+)\/undo-return$/, (q, b, id) => registry.undoReturn(id)],
   ["POST", /^\/api\/loans\/(\d+)\/renew$/, (q, b, id) => registry.renew(id)],
-  ["PATCH", /^\/api\/loans\/(\d+)$/, (q, b, id) => ("lent_on" in b ? registry.setLentOn(id, b.lent_on || "") : registry.setDue(id, b.due_on || ""))],
+  ["PATCH", /^\/api\/loans\/(\d+)$/, (q, b, id) => ("lent_on" in b ? registry.setLentOn(id, b.lent_on || "")
+    : "returned_on" in b ? registry.setReturnedOn(id, b.returned_on || "")
+    : "code" in b ? registry.setLoanCopy(id, b.code || "")
+    : registry.setDue(id, b.due_on || ""))],
   ["GET", /^\/api\/sheet$/, (q) => registry.classSheet(q.has("grade") ? q.get("grade") : null)],
   ["GET", /^\/api\/sheet\/history$/, (q) => registry.classHistory(q.get("grade") || "")],
   ["GET", /^\/api\/books$/, (q) => registry.books(q.get("archived") === "1")],

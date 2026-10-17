@@ -129,6 +129,39 @@ test("a loan made by mistake can be taken back while it is still out", () => {
   assert.equal(r.studentHistory(joaquin.id).length, 1, "returned loans stay in the history");
 });
 
+test("a returned loan's dates can be fixed, but the copy is never in two hands on the same days", () => {
+  const first = r.lend("B-0001", martina.id, null, false, "2026-09-10");
+  r.returnCopy("B-0001", "2026-09-20");
+  const second = r.lend("B-0001", joaquin.id, null, false, "2026-09-25");
+  assert.equal(r.setReturnedOn(first.id, "2026-09-18").returned_on, "2026-09-18");
+  assert.equal(r.setReturnedOn(first.id, "2026-09-25").returned_on, "2026-09-25", "back and out again the same day");
+  rejects(() => r.setReturnedOn(first.id, "2026-09-26"), "copy_on_loan");
+  rejects(() => r.setReturnedOn(first.id, "2026-09-05"), "invalid");
+  rejects(() => r.setReturnedOn(first.id, "2026-10-05"), "invalid");
+  rejects(() => r.setReturnedOn(second.id, "2026-09-30"), "invalid");
+  rejects(() => r.setLentOn(second.id, "2026-09-15"), "copy_on_loan");
+});
+
+test("a loan written down with the wrong copy can be moved to the right one", () => {
+  const out = r.lend("B-0001", martina.id, null, false, "2026-09-25");
+  assert.equal(r.setLoanCopy(out.id, "B-0003").title, "El Principito");
+  assert.equal(r.book(matilda.id).available, 2);
+  assert.equal(r.book(principito.id).available, 0);
+  r.lend("B-0002", joaquin.id);
+  rejects(() => r.setLoanCopy(out.id, "B-0002"), "copy_on_loan");
+  const old = r.lend("B-0001", bruno.id, null, false, "2026-09-01");
+  r.returnCopy("B-0001", "2026-09-05");
+  assert.equal(r.setLoanCopy(old.id, "B-0002").code, "B-0002", "B-0002 was free that week");
+});
+
+test("a loan that never happened can be deleted, even after it was returned", () => {
+  const loan = r.lend("B-0001", martina.id);
+  r.returnCopy("B-0001");
+  assert.equal(r.deleteLoan(loan.id).title, "Matilda");
+  assert.equal(r.studentHistory(martina.id).length, 0);
+  rejects(() => r.deleteLoan(loan.id), "not_found");
+});
+
 test("the class sheet has a tab per class and a row per student in the order they were loaded", () => {
   const ana = r.addStudent("Ana Álvarez", "4 b");
   r.addStudent("Sin Clase", "");
