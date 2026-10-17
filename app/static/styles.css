@@ -413,6 +413,8 @@ td .book-cell a:hover, td .student-link:hover { color: var(--moña); text-decora
 .book-meta { color: var(--ink-2); font-size: .875rem; }
 .section-pick { flex: 0 1 260px; }
 .note-cell { min-width: 180px; }
+.ref-cell .note-edit { width: 6em; }
+.copy-ref { font-family: var(--font-ui); font-weight: 700; color: var(--ink-2); }
 .note-edit { min-height: 40px; padding: 6px 10px; font-size: .9375rem; border-color: transparent; background: transparent; }
 .note-edit:hover, .note-edit:focus { border-color: var(--line-strong); background: var(--paper); }
 .add-form .row { display: flex; gap: 10px; flex-wrap: wrap; }

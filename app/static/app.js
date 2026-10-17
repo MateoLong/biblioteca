@@ -42,6 +42,8 @@ function fmtRel(iso) {
   if (n === -1) return "ayer";
   return fmtDay(iso);
 }
+// A copy as she tells it apart: its reference (the number written on it, "(2)") and its code.
+const codeTag = (c) => `${c.ref ? `<span class="copy-ref">(${esc(c.ref)})</span> ` : ""}<span class="code">${esc(c.code)}</span>`;
 const fmtDM = (iso) => { const [, m, d] = iso.split("-"); return `${d}/${m}`; };
 const WEEKDAYS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 const weekday = (iso) => WEEKDAYS[new Date(`${iso}T12:00:00`).getDay()];
@@ -346,7 +348,7 @@ function renderCounter() {
     combobox($("#r-q"), {
       fetcher: (q) => api("GET", `/api/suggest/copies?mode=return&q=${encodeURIComponent(q)}`),
       render: (c) => `<span class="forro swatch" ${forroAttrs(c)}></span>
-        <span><span class="opt-main">${esc(c.title)}</span> <span class="code">${esc(c.code)}</span><br>
+        <span><span class="opt-main">${esc(c.title)}</span> ${codeTag(c)}<br>
         <span class="opt-sub">lo tiene ${esc(c.student)}${c.grade ? ` (${esc(c.grade)})` : ""} · vuelve ${esc(fmtRel(c.due_on))}</span></span>`,
       emptyText: (q) => `Ningún libro prestado coincide con «${q}».`,
       onPick: (c) => doReturn(c.code),
@@ -444,7 +446,7 @@ function paintCopySlot() {
     slot.innerHTML = `<div class="picked-line" data-testid="picked-copy">
       <span class="forro swatch" ${forroAttrs(c)}></span>
       <span class="hand picked-hand">${esc(c.title)}</span>
-      <span class="picked-meta">${esc(c.code)}</span>
+      <span class="picked-meta">${codeTag(c)}</span>
       <button type="button" class="btn btn-quiet btn-sm" aria-label="Cambiar libro">${icon("x")}</button></div>`;
     $("button", slot).addEventListener("click", () => { desk.copy = null; paintCopySlot(); $("#l-copy").focus(); });
     return;
@@ -453,7 +455,7 @@ function paintCopySlot() {
   combobox($("#l-copy"), {
     fetcher: (q) => api("GET", `/api/suggest/copies?mode=lend&q=${encodeURIComponent(q)}`),
     render: (c) => `<span class="forro swatch" ${forroAttrs(c)}></span>
-      <span><span class="opt-main">${esc(c.title)}</span> <span class="code">${esc(c.code)}</span><br><span class="opt-sub">${esc(c.author || "")}</span></span>`,
+      <span><span class="opt-main">${esc(c.title)}</span> ${codeTag(c)}<br><span class="opt-sub">${esc(c.author || "")}</span></span>`,
     emptyText: (q) => `No hay ejemplares disponibles de «${q}». Si es un libro nuevo, agregalo en Libros.`,
     onPick: (c) => { desk.copy = c; clearLastResult(); paintCopySlot(); (desk.student ? $("[data-testid=lend-submit]") : $("#l-student"))?.focus(); },
   });
@@ -573,7 +575,7 @@ function wireAsk() {
 
 function loanLines(loans, { showBook = true } = {}) {
   return `<ul class="lines">${loans.map((l) => `<li>
-    ${showBook ? `<span class="forro swatch" ${forroAttrs(l)} style="width:16px;height:22px;${forro(l).style}"></span><a href="${bookHref(l.book_id)}"><strong>${esc(l.title)}</strong></a> <span class="code">${esc(l.code)}</span>` : ""}
+    ${showBook ? `<span class="forro swatch" ${forroAttrs(l)} style="width:16px;height:22px;${forro(l).style}"></span><a href="${bookHref(l.book_id)}"><strong>${esc(l.title)}</strong></a> ${codeTag(l)}` : ""}
     <span>${loanSentence(l)}</span></li>`).join("")}</ul>`;
 }
 
@@ -604,14 +606,14 @@ function renderAnswer(a) {
       blocks.push(`<div class="answer-block" data-testid="answer-book">
         <div class="answer-title"><span class="forro swatch" ${forroAttrs(b)} style="width:22px;height:30px;${forro(b).style}"></span><a href="${bookHref(b.id)}">${esc(b.title)}</a><span class="muted">${esc(b.author)}</span></div>
         <p>${lead}</p>
-        <ul class="lines">${active.filter((c) => c.loan).map((c) => `<li><span class="code">${esc(c.code)}</span> <span>${loanSentence(c.loan)}</span></li>`).join("")}</ul>
+        <ul class="lines">${active.filter((c) => c.loan).map((c) => `<li>${codeTag(c)} <span>${loanSentence(c.loan)}</span></li>`).join("")}</ul>
       </div>`);
     }
     for (const s of a.students) {
       blocks.push(`<div class="answer-block" data-testid="answer-student">
         <div class="answer-title"><span class="avatar" style="${studentColor(s.id)};width:30px;height:30px;font-size:.8rem">${esc(initials(s.name))}</span><a href="${studentHref(s.id)}">${esc(s.name)}</a><span class="muted">${esc(s.grade)}</span></div>
         ${s.loans.length
-          ? `<p>Tiene ${plural(s.loans.length, "libro", "libros")}:</p><ul class="lines">${s.loans.map((l) => `<li><a href="${bookHref(l.book_id)}"><strong>${esc(l.title)}</strong></a> <span class="code">${esc(l.code)}</span> <span class="${l.overdue ? "late-days" : "muted"}">${l.overdue ? `venció el ${fmtDay(l.due_on)}` : `vuelve ${fmtRel(l.due_on)}`}</span></li>`).join("")}</ul>`
+          ? `<p>Tiene ${plural(s.loans.length, "libro", "libros")}:</p><ul class="lines">${s.loans.map((l) => `<li><a href="${bookHref(l.book_id)}"><strong>${esc(l.title)}</strong></a> ${codeTag(l)} <span class="${l.overdue ? "late-days" : "muted"}">${l.overdue ? `venció el ${fmtDay(l.due_on)}` : `vuelve ${fmtRel(l.due_on)}`}</span></li>`).join("")}</ul>`
           : `<p>No tiene libros prestados.${s.times_borrowed ? ` Ya se llevó ${plural(s.times_borrowed, "libro", "libros")} en total.` : ""}</p>`}
       </div>`);
     }
@@ -693,7 +695,7 @@ function sheetRow(s, fresh = null) {
       <span class="muted">${s.times_borrowed ? plural(s.times_borrowed, "libro leído", "libros leídos") : "todavía ninguno"}</span></div>
     <div class="sheet-has">${s.loans.length ? s.loans.map((l) => `<span class="held ${l.overdue ? "is-late" : ""} ${l.id === fresh ? "is-new" : ""}" data-testid="held">
         <span class="forro swatch" ${forroAttrs(l)}></span>
-        <span class="held-text"><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><small>${l.overdue ? `venció el ${fmtDay(l.due_on)}` : `vuelve ${fmtRel(l.due_on)}`}</small></span>
+        <span class="held-text"><a href="${bookHref(l.book_id)}">${esc(l.title)}${l.ref ? ` (${esc(l.ref)})` : ""}</a><small>${l.overdue ? `venció el ${fmtDay(l.due_on)}` : `vuelve ${fmtRel(l.due_on)}`}</small></span>
         <button type="button" class="btn btn-line btn-sm" data-held="${esc(l.code)}" aria-label="${esc(s.name)} devolvió ${esc(l.title)}">Devolvió</button>
       </span>`).join("") : '<span class="muted">—</span>'}</div>
     <div class="sheet-take combo"><input class="line-input hand" id="take-${s.id}" placeholder="título o código" aria-label="Libro que se lleva ${esc(s.name)}" data-testid="sheet-input"></div>
@@ -708,7 +710,7 @@ function wireSheetRow(li) {
   combobox(input, {
     fetcher: (q) => api("GET", `/api/suggest/copies?mode=lend&q=${encodeURIComponent(q)}`),
     render: (c) => `<span class="forro swatch" ${forroAttrs(c)}></span>
-      <span><span class="opt-main">${esc(c.title)}</span> <span class="code">${esc(c.code)}</span><br><span class="opt-sub">${esc(c.author || "")}</span></span>`,
+      <span><span class="opt-main">${esc(c.title)}</span> ${codeTag(c)}<br><span class="opt-sub">${esc(c.author || "")}</span></span>`,
     emptyText: (q) => `No hay ejemplares disponibles de «${q}».`,
     onPick: (c) => sheetLend(li, id, c.code, false),
   });
@@ -800,7 +802,7 @@ async function viewAtrasados() {
     ${loans.length ? `<div class="table-wrap"><table class="stack-sm" data-testid="overdue-table">
       <thead><tr>${ROW_N_HEAD}<th>Libro</th><th>Alumno</th><th class="hide-sm">Clase</th><th>Venció</th><th class="num">Atraso</th><th class="actions"><span class="sr-only">Acciones</span></th></tr></thead>
       <tbody>${loans.map((l) => `<tr class="is-late" data-loan="${l.id}">
-        ${ROW_N}<td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span></span></div></td>
+        ${ROW_N}<td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br>${codeTag(l)}</span></div></td>
         <td><a class="student-link" href="${studentHref(l.student_id)}">${esc(l.student)}</a></td>
         <td class="hide-sm">${esc(l.grade)}</td>
         <td data-label="Venció">${fmtDay(l.due_on)}</td>
@@ -870,7 +872,7 @@ function wireLoanActions(root = main) {
     // A book still out moves to a free copy; an old loan can name any copy, checked against its dates.
     fetcher: (q) => api("GET", `/api/suggest/copies?mode=${input.dataset.out === "1" ? "lend" : "any"}&q=${encodeURIComponent(q)}`),
     render: (c) => `<span class="forro swatch" ${forroAttrs(c)}></span>
-      <span><span class="opt-main">${esc(c.title)}</span> <span class="code">${esc(c.code)}</span><br><span class="opt-sub">${esc(c.student ? `ahora lo tiene ${c.student}` : c.author || "")}</span></span>`,
+      <span><span class="opt-main">${esc(c.title)}</span> ${codeTag(c)}<br><span class="opt-sub">${esc(c.student ? `ahora lo tiene ${c.student}` : c.author || "")}</span></span>`,
     emptyText: (q) => `No encontré «${q}».`,
     onPick: async (c) => {
       try {
@@ -1002,6 +1004,13 @@ function wireFilter() {
   });
 }
 
+// When a book's copies are numbered 1, 2… the next copy gets the next number; otherwise nothing.
+function nextRef(copies) {
+  const refs = copies.map((c) => c.ref).filter(Boolean);
+  if (!refs.length || !refs.every((r) => /^\d+$/.test(r))) return "";
+  return String(Math.max(...refs.map(Number)) + 1);
+}
+
 async function viewLibro(id) {
   loading();
   const [b] = await Promise.all([api("GET", `/api/books/${id}`), refreshSummary()]);
@@ -1027,16 +1036,18 @@ async function viewLibro(id) {
       <datalist id="sections">${summary.sections.map((v) => `<option value="${esc(v)}">`).join("")}</datalist></form>
     <section class="section" aria-labelledby="copies-h">
       <h2 id="copies-h">Ejemplares</h2>
-      <div class="table-wrap"><table class="stack-sm" data-testid="copies-table"><thead><tr>${ROW_N_HEAD}<th>Código</th><th>Estado</th><th>Quién lo tiene</th><th>Notas</th><th class="actions"></th></tr></thead><tbody>
+      <div class="table-wrap"><table class="stack-sm" data-testid="copies-table"><thead><tr>${ROW_N_HEAD}<th>Código</th><th>Referencia</th><th>Estado</th><th>Quién lo tiene</th><th>Notas</th><th class="actions"></th></tr></thead><tbody>
       ${b.copies.map((c) => `<tr class="${c.loan?.overdue ? "is-late" : ""}">
         ${ROW_N}<td><strong>${esc(c.code)}</strong></td>
+        <td class="ref-cell" data-label="Ref."><input class="input note-edit" value="${esc(c.ref)}" placeholder="1, 2…" data-ref="${esc(c.code)}" aria-label="Referencia del ejemplar ${esc(c.code)}" data-testid="copy-ref"></td>
         <td>${statusPill(c, b.archived)}</td>
         <td>${c.loan ? `<a class="student-link" href="${studentHref(c.loan.student_id)}">${esc(c.loan.student)}</a> <span class="muted">${esc(c.loan.grade)} · ${c.loan.overdue ? `<span class="late-days">venció el ${fmtDay(c.loan.due_on)}</span>` : `vuelve ${fmtRel(c.loan.due_on)}`}</span>` : '<span class="muted">—</span>'}</td>
         <td class="note-cell"><input class="input note-edit" value="${esc(c.note)}" placeholder="donación, edición…" data-note="${esc(c.code)}" aria-label="Notas del ejemplar ${esc(c.code)}"></td>
         <td class="actions">${c.loan ? `<button type="button" class="btn btn-line btn-sm" data-return="${esc(c.code)}">Devolver</button>`
           : `<button type="button" class="btn btn-quiet btn-sm" data-copy="${esc(c.code)}" data-archived="${c.archived ? 0 : 1}">${c.archived ? "Reactivar" : "Dar de baja"}</button>`}</td>
       </tr>`).join("")}</tbody></table></div>
-      ${b.archived ? "" : `<form id="add-copy" class="toolbar" style="margin-top:14px"><label class="field" style="flex:0 1 260px"><span>Agregar ejemplar</span><input class="input" name="code" placeholder="Código (opcional)"></label><button class="btn btn-line" type="submit" style="align-self:end">${icon("plus")}Agregar</button></form>`}
+      ${b.archived ? "" : `<form id="add-copy" class="toolbar" style="margin-top:14px"><label class="field" style="flex:0 1 260px"><span>Agregar ejemplar</span><input class="input" name="code" placeholder="Código (opcional)"></label>
+        <label class="field" style="flex:0 1 140px"><span>Referencia</span><input class="input" name="ref" value="${esc(nextRef(b.copies))}" placeholder="1, 2…"></label><button class="btn btn-line" type="submit" style="align-self:end">${icon("plus")}Agregar</button></form>`}
     </section>
     <section class="section" aria-labelledby="hist-h"><h2 id="hist-h">Historial <small>${plural(b.history.length, "préstamo", "préstamos")}</small></h2>${historyTable(b.history, "student", `Todavía nadie se lo llevó. Se presta desde el <a href="#/mostrador">Mostrador</a>.`)}</section>`;
 
@@ -1059,12 +1070,15 @@ async function viewLibro(id) {
   $$("[data-copy]").forEach((btn) => btn.addEventListener("click", async () => {
     try { await api("PATCH", `/api/copies/${encodeURIComponent(btn.dataset.copy)}`, { archived: btn.dataset.archived === "1" }); route(); } catch (err) { fail(err); }
   }));
+  $$("[data-ref]").forEach((inp) => inp.addEventListener("change", async () => {
+    try { await api("PATCH", `/api/copies/${encodeURIComponent(inp.dataset.ref)}`, { ref: inp.value }); toast(`Referencia guardada en ${inp.dataset.ref}.`); } catch (err) { fail(err); }
+  }));
   $$("[data-note]").forEach((inp) => inp.addEventListener("change", async () => {
     try { await api("PATCH", `/api/copies/${encodeURIComponent(inp.dataset.note)}`, { note: inp.value }); toast(`Nota guardada en ${inp.dataset.note}.`); } catch (err) { fail(err); }
   }));
   $("#add-copy")?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    try { await api("POST", `/api/books/${id}/copies`, { code: e.target.code.value }); toast("Ejemplar agregado."); route(); } catch (err) { fail(err); }
+    try { await api("POST", `/api/books/${id}/copies`, { code: e.target.code.value, ref: e.target.ref.value }); toast("Ejemplar agregado."); route(); } catch (err) { fail(err); }
   });
   wireLoanActions();
 }
@@ -1079,7 +1093,7 @@ const ROW_N = '<td class="row-n"></td>';
 function historyTable(rows, who, empty, fixable = false) {
   if (!rows.length) return `<p class="muted" data-testid="history-empty">${empty}</p>`;
   const student = (l) => `<td><a class="student-link" href="${studentHref(l.student_id)}">${esc(l.student)}</a>${who === "both" ? "" : ` <span class="muted">${esc(l.grade)}</span>`}</td>`;
-  const book = (l) => `<td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)} style="width:20px;height:27px;${forro(l).style}"></span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a> <span class="code">${esc(l.code)}</span></div></td>`;
+  const book = (l) => `<td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)} style="width:20px;height:27px;${forro(l).style}"></span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a> ${codeTag(l)}</div></td>`;
   return `<div class="table-wrap"><table class="stack-sm"><thead><tr>${ROW_N_HEAD}${who === "book" ? "" : "<th>Alumno</th>"}${who === "student" ? "" : "<th>Libro</th>"}<th>Prestado</th><th>Vuelve / volvió</th><th class="hide-sm">Estado</th>${fixable ? '<th class="actions"><span class="sr-only">Corregir</span></th>' : ""}</tr></thead><tbody>
     ${rows.map((l) => `<tr>
       ${ROW_N}${who === "book" ? "" : student(l)}${who === "student" ? "" : book(l)}
@@ -1190,7 +1204,7 @@ async function viewAlumno(id) {
     <section class="section" aria-labelledby="now-h"><h2 id="now-h">Libros en su poder</h2>
       ${s.loans.length ? `<div class="table-wrap"><table class="stack-sm" data-testid="student-loans"><thead><tr>${ROW_N_HEAD}<th>Libro</th><th>Prestado</th><th>Vuelve el</th><th class="actions"></th></tr></thead><tbody>
         ${s.loans.map((l) => `<tr class="${l.overdue ? "is-late" : ""}">
-          ${ROW_N}<td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br><span class="code">${esc(l.code)}</span>${l.overdue ? ` <span class="late-days">· ${plural(l.days_late, "día", "días")} de atraso</span>` : ""}</span></div></td>
+          ${ROW_N}<td><div class="book-cell"><span class="forro swatch" ${forroAttrs(l)}></span><span><a href="${bookHref(l.book_id)}">${esc(l.title)}</a><br>${codeTag(l)}${l.overdue ? ` <span class="late-days">· ${plural(l.days_late, "día", "días")} de atraso</span>` : ""}</span></div></td>
           <td data-label="Prestado"><input class="line-input hand due-edit" value="${fmtDM(l.lent_on)}" inputmode="numeric" data-lent="${l.id}" aria-label="Día que se prestó ${esc(l.title)}, día y mes"></td>
           <td data-label="Vuelve"><input class="line-input hand due-edit" value="${fmtDM(l.due_on)}" inputmode="numeric" data-due="${l.id}" data-from="${l.lent_on}" aria-label="Fecha de vuelta de ${esc(l.title)}, día y mes"></td>
           <td class="actions"><button type="button" class="btn btn-quiet btn-sm" data-renew="${l.id}">${icon("rotate-cw")}Renovar</button>
@@ -1272,11 +1286,12 @@ Joaquín Pereira;4°B</pre>
 
       <form class="panel" id="import-books">
         <h2>Cargar libros desde Excel</h2>
-        <p>Columnas: título, autor, editorial, idioma, sección, color (azul, rojo o verde), notas, ejemplares y, si ya tienen, código. Solo el título es obligatorio.</p>
-        <pre class="sample">Titulo;Autor;Editorial;Idioma;Color;Notas
-Cuentos de la selva;Horacio Quiroga;Santillana;Español;Rojo;
-Matilda;Roald Dahl;Puffin;Inglés;Verde;Donación familia Ferrand</pre>
-        <p class="muted" style="font-size:.9375rem">Un renglón por ejemplar: si el mismo libro aparece dos veces, son dos ejemplares (cada uno con sus notas). Los libros que ya estaban se saltean, así que cargar la misma planilla otra vez no duplica nada.</p>
+        <p>Columnas: título, autor, editorial, idioma, sección, color (azul, rojo o verde), notas, referencia (1, 2… para distinguir dos ejemplares del mismo libro), ejemplares y, si ya tienen, código. Solo el título es obligatorio.</p>
+        <pre class="sample">Titulo;Autor;Editorial;Idioma;Color;Notas;Referencia
+Cuentos de la selva;Horacio Quiroga;Santillana;Español;Rojo;;
+Matilda;Roald Dahl;Puffin;Inglés;Verde;Donación familia Ferrand;1
+Matilda;Roald Dahl;Puffin;Inglés;Verde;;2</pre>
+        <p class="muted" style="font-size:.9375rem">Un renglón por ejemplar: si el mismo libro aparece dos veces, son dos ejemplares (cada uno con su referencia y sus notas). Los libros que ya estaban se saltean, así que cargar la misma planilla otra vez no duplica nada.</p>
         <label class="field"><span>Pegá las filas copiadas de Excel o Numbers</span><textarea class="input paste" name="paste" rows="4" placeholder="Matilda	Roald Dahl	1" data-testid="import-books-paste"></textarea></label>
         <label class="file-drop"><span class="field-label">…o elegí la planilla (Excel .xlsx o CSV)</span><input type="file" name="file" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" data-testid="import-books-file"></label>
         <div class="import-msg" aria-live="polite"></div>
@@ -1426,7 +1441,7 @@ async function viewAyuda() {
       ])}
       ${card("cargar", "plus", "Agregar alumnos y libros", [
         "De a uno: en <strong>Libros</strong> o <strong>Alumnos</strong>, con el botón amarillo de arriba. A cada libro elegile su color: <strong>azul</strong> (0 a 7 años), <strong>rojo</strong> (7 a 10) o <strong>verde</strong> (10 a 12).",
-        "Todos juntos: en <strong>Ajustes</strong>, elegí la planilla de Excel desde Archivos (o pegá las filas) y tocá <strong>Cargar alumnos</strong> o <strong>Cargar libros</strong>. De los libros se guardan también <strong>Color</strong>, <strong>Editorial</strong>, <strong>Idioma</strong>, <strong>Sección</strong> y las <strong>Notas</strong> de cada ejemplar.",
+        "Todos juntos: en <strong>Ajustes</strong>, elegí la planilla de Excel desde Archivos (o pegá las filas) y tocá <strong>Cargar alumnos</strong> o <strong>Cargar libros</strong>. De los libros se guardan también <strong>Color</strong>, <strong>Editorial</strong>, <strong>Idioma</strong>, <strong>Sección</strong> y la <strong>Referencia</strong> y las <strong>Notas</strong> de cada ejemplar.",
         "Los libros sin color se ven grises. En <strong>Libros</strong>, el filtro <strong>Sin color</strong> te muestra cuáles faltan.",
         "Nada se borra: un alumno que se fue se <strong>archiva</strong> desde su página. Si se rompe un ejemplar, en la página del libro tocá <strong>Dar de baja</strong> en su fila. Antes tienen que devolver lo que tengan prestado, y el historial queda.",
       ], ["#/ajustes", "Ir a Ajustes"])}

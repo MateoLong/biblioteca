@@ -212,7 +212,7 @@ export class Registry {
   }
 
   /**
-   * more: { publisher, language, section } of the book, and notes for its copies
+   * more: { publisher, language, section } of the book, and notes and refs for its copies
    * (one string for all of them, or one per copy).
    */
   addBook(title, author = "", copies = 1, codes = [], demo = false, color = "", more = {}) {
@@ -235,18 +235,19 @@ export class Registry {
       for (let i = 0; i < count; i++) {
         const code = i < codes.length ? codes[i] : this._nextCode();
         const note = Array.isArray(more.notes) ? more.notes[i] : more.notes;
-        s.copies.push({ id: this._nextId("copy"), book_id: bookId, code: code.toUpperCase(), note: clean(note), archived: false });
+        const ref = Array.isArray(more.refs) ? more.refs[i] : more.refs;
+        s.copies.push({ id: this._nextId("copy"), book_id: bookId, code: code.toUpperCase(), ref: clean(ref), note: clean(note), archived: false });
       }
       return bookId;
     });
     return this.book(id);
   }
 
-  addCopy(bookId, code, note = "") {
+  addCopy(bookId, code, note = "", ref = "") {
     this._requireBook(bookId);
     code = String(code || "").trim() || this._nextCode();
     this._ensureCodeFree(code);
-    this._write((s) => s.copies.push({ id: this._nextId("copy"), book_id: Number(bookId), code: code.toUpperCase(), note: clean(note), archived: false }));
+    this._write((s) => s.copies.push({ id: this._nextId("copy"), book_id: Number(bookId), code: code.toUpperCase(), ref: clean(ref), note: clean(note), archived: false }));
     return this.book(bookId);
   }
 
@@ -267,6 +268,13 @@ export class Registry {
   setCopyNote(code, note) {
     const c = this._requireCopy(code);
     this._write((s) => { s.copies.find((x) => x.id === c.id).note = clean(note); });
+    return this.book(c.book_id);
+  }
+
+  /** A copy's reference, the number written on it to tell two copies of a book apart: 1, 2… */
+  setCopyRef(code, ref) {
+    const c = this._requireCopy(code);
+    this._write((s) => { s.copies.find((x) => x.id === c.id).ref = clean(ref); });
     return this.book(c.book_id);
   }
 
@@ -409,7 +417,7 @@ export class Registry {
     const open = l.returned_on == null;
     const daysLate = open ? Math.max(0, daysBetween(l.due_on, this.today())) : 0;
     return {
-      id: l.id, code: c.code, book_id: b.id, title: b.title, author: b.author, color: b.color,
+      id: l.id, code: c.code, ref: c.ref, book_id: b.id, title: b.title, author: b.author, color: b.color,
       student_id: s.id, student: s.name, grade: s.grade,
       lent_on: l.lent_on, due_on: l.due_on, returned_on: l.returned_on ?? null,
       open, days_late: daysLate, overdue: daysLate > 0,
@@ -657,18 +665,19 @@ export class Registry {
       const loan = this._openLoanForCopy(c.id);
       if (mode !== "any" && Boolean(loan) !== (mode === "return")) continue;
       const s = loan ? this.state.students.find((x) => x.id === loan.student_id) : null;
-      const row = { code: c.code, book_id: b.id, title: b.title, author: b.author, color: b.color, loan_id: loan?.id ?? null,
+      const row = { code: c.code, ref: c.ref, book_id: b.id, title: b.title, author: b.author, color: b.color, loan_id: loan?.id ?? null,
         student: s?.name ?? null, grade: s?.grade ?? null, due_on: loan?.due_on ?? null };
-      const hay = norm([c.code, b.title, b.author, s?.name || "", s?.grade || ""].join(" "));
-      if (words.every((w) => hay.includes(w))) out.push(row);
+      const hay = norm([c.code, c.ref, b.title, b.author, s?.name || "", s?.grade || ""].join(" "));
+      // "matilda 2": the copy whose reference is 2 comes first.
+      if (words.every((w) => hay.includes(w))) out.push({ ...row, refHit: Boolean(c.ref) && words.includes(norm(c.ref)) });
     }
-    out.sort(byKey((r) => [norm(r.code) !== exact ? 1 : 0, norm(r.title), r.code]));
+    out.sort(byKey((r) => [norm(r.code) !== exact ? 1 : 0, r.refHit ? 0 : 1, norm(r.title), r.code]));
     if (mode === "lend") {
       // One row per title is enough at the counter; the first free copy goes out.
       const seen = new Set();
       out = out.filter((r) => { if (seen.has(r.book_id) && norm(r.code) !== exact) return false; seen.add(r.book_id); return true; });
     }
-    return out.slice(0, limit);
+    return out.slice(0, limit).map(({ refHit, ...r }) => r);
   }
 
   summary() {
@@ -700,7 +709,7 @@ export class Registry {
     const top = rows.findIndex((r) => r.some((c) => c.trim()));
     if (top < 0) throw new RegistryError("invalid", "El archivo está vacío.");
     let header = rows[top].map(norm);
-    const known = new Set(["titulo", "autor", "ejemplares", "codigo", "codigos", "color", "edad", "editorial", "idioma", "seccion", "notas", "nota",
+    const known = new Set(["titulo", "autor", "ejemplares", "codigo", "codigos", "color", "edad", "editorial", "idioma", "seccion", "notas", "nota", "referencia", "ref",
       "nombre", "clase", "grado", "grupo"]);
     let body, firstLine;
     if (header.some((h) => known.has(h))) { body = rows.slice(top + 1); firstLine = top + 2; }
@@ -727,7 +736,7 @@ export class Registry {
           let color = get(row, "color", "edad");
           try { color = tidyColor(color); } catch { errors.push(`Fila ${firstLine + i}: no entendí el color «${color}»; cargué «${title}» sin color.`); color = ""; }
           const language = tidyLanguage(get(row, "idioma")), section = clean(get(row, "seccion")), publisher = clean(get(row, "editorial"));
-          const note = get(row, "notas", "nota");
+          const note = get(row, "notas", "nota"), ref = get(row, "referencia", "ref");
           // Same book: same title and author, and the same colour, language and section where the row gives them.
           const match = (byTitle.get(key(title, author)) || []).find((b) => (!color || b.color === color)
             && (!language || norm(b.language) === norm(language)) && (!section || norm(b.section) === norm(section)));
@@ -736,12 +745,12 @@ export class Registry {
           const count = Math.max(codes.length, /^\d+(\.0+)?$/.test(n) ? Number(n) : 1);
           if (match && !mine.has(match.id)) { skipped++; return; }
           if (match) {
-            for (let k = 0; k < count; k++) this.addCopy(match.id, codes[k] || "", note);
+            for (let k = 0; k < count; k++) this.addCopy(match.id, codes[k] || "", note, ref);
             // Copies of other editions: keep every publisher.
             const had = this._requireBook(match.id).publisher;
             if (publisher && !had.split(" / ").includes(publisher)) this.updateBook(match.id, { publisher: had ? `${had} / ${publisher}` : publisher });
           } else {
-            const b = this.addBook(title, author, count, codes, false, color, { publisher, language, section, notes: note });
+            const b = this.addBook(title, author, count, codes, false, color, { publisher, language, section, notes: note, refs: ref });
             mine.add(b.id);
             remember(b);
             added++;
@@ -875,12 +884,12 @@ export class Registry {
       const rows = [];
       for (const b of this.books(true)) {
         for (const c of this.book(b.id).copies) {
-          rows.push([c.code, b.title, b.author, b.publisher, b.language, b.section, b.color ? b.color[0].toUpperCase() + b.color.slice(1) : "", c.note,
+          rows.push([c.code, c.ref, b.title, b.author, b.publisher, b.language, b.section, b.color ? b.color[0].toUpperCase() + b.color.slice(1) : "", c.note,
             c.archived || b.archived ? "Dado de baja" : c.loan ? "Prestado" : "Disponible", c.loan?.student || "", c.loan?.grade || "", c.loan?.due_on || null]);
         }
       }
       // One row per copy, with the same column names the book import reads, so it comes back in as it went out.
-      return { name: "Libros", columns: [["Código", 10], ["Título", 34], ["Autor", 24], ["Editorial", 26], ["Idioma", 10], ["Sección", 16], ["Color", 8], ["Notas", 30],
+      return { name: "Libros", columns: [["Código", 10], ["Referencia", 10], ["Título", 34], ["Autor", 24], ["Editorial", 26], ["Idioma", 10], ["Sección", 16], ["Color", 8], ["Notas", 30],
         ["Estado", 13], ["Lo tiene", 26], ["Clase", 8], ["Vence", 12, D]], rows };
     }
     if (kind === "students") {
@@ -969,7 +978,7 @@ function migrate(state) {
     let color = ""; try { color = tidyColor(b.color); } catch { /* unreadable: unset */ }
     return { publisher: "", language: "", section: "", ...b, color };
   });
-  const copies = (state.copies || base.copies).map((c) => ({ note: "", ...c }));
+  const copies = (state.copies || base.copies).map((c) => ({ note: "", ref: "", ...c }));
   return { ...base, ...state, books, copies, seq: { ...base.seq, ...(state.seq || {}) }, settings: { ...base.settings, ...(state.settings || {}) } };
 }
 

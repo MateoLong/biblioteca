@@ -271,6 +271,16 @@ test("counter suggestions split available and on-loan copies", () => {
   assert.deepEqual(r.suggestCopies("martina", "return").map((c) => [c.code, c.student]), [["B-0001", "Martina López"]]);
 });
 
+test("a copy's reference tells two copies apart: suggestions find it and loans carry it", () => {
+  r.setCopyRef("B-0001", "1");
+  r.setCopyRef("B-0002", "2");
+  assert.deepEqual(r.suggestCopies("matilda 2", "any").map((c) => [c.code, c.ref]), [["B-0002", "2"]]);
+  r.setCopyRef("B-0001", "2");
+  r.setCopyRef("B-0002", "1");
+  assert.deepEqual(r.suggestCopies("matilda 1", "lend").map((c) => c.code), ["B-0002"], "at the counter, the copy she names goes out");
+  assert.equal(r.lend("B-0002", martina.id).ref, "1");
+});
+
 // ── archive, import/export, backup ──
 test("archive is refused while books are out, and history survives", () => {
   r.lend("B-0001", martina.id);
@@ -295,18 +305,18 @@ test("import students and books from Excel-style CSV and pasted tabs", () => {
 
 // ── the rest of a book's card: editorial, idioma, sección, and a note per copy ──
 test("a book list with one row per copy groups them into books, keeps every column, and re-importing adds nothing", () => {
-  const sheet = "Título;Autor;Editorial;Idioma;Sección;Color;Notas\n"
-    + "Pateando lunas;Berocay, Roy;Santillana;Español;;Verde;Donación familia Ferrand\n"
-    + "Pateando lunas;Berocay, Roy;Santillana. Montevideo, 2016;es;;Verde;Edición El País\n"
-    + "Are you my mother?;Eastman, P.D.;Harper Collins;English;;Azul;\n"
-    + "Are you my mother?;Eastman, P.D.;Random House;Inglés;;Rojo;\n"
-    + "Matilda;Roald Dahl;Puffin;Inglés;Roald Dahl;;\n";
+  const sheet = "Título;Autor;Editorial;Idioma;Sección;Color;Notas;Referencia\n"
+    + "Pateando lunas;Berocay, Roy;Santillana;Español;;Verde;Donación familia Ferrand;1\n"
+    + "Pateando lunas;Berocay, Roy;Santillana. Montevideo, 2016;es;;Verde;Edición El País;2\n"
+    + "Are you my mother?;Eastman, P.D.;Harper Collins;English;;Azul;;\n"
+    + "Are you my mother?;Eastman, P.D.;Random House;Inglés;;Rojo;;\n"
+    + "Matilda;Roald Dahl;Puffin;Inglés;Roald Dahl;;;\n";
   const res = r.importCsv("books", sheet);
   assert.deepEqual([res.added, res.copies, res.skipped, res.errors], [4, 5, 0, []]);
   const lunas = r.ask("pateando lunas").books[0];
   assert.deepEqual([lunas.total, lunas.language, lunas.color, lunas.section], [2, "Español", "verde", ""]);
   assert.equal(lunas.publisher, "Santillana / Santillana. Montevideo, 2016", "copies of another edition keep their publisher");
-  assert.deepEqual(lunas.copies.map((c) => c.note), ["Donación familia Ferrand", "Edición El País"]);
+  assert.deepEqual(lunas.copies.map((c) => [c.ref, c.note]), [["1", "Donación familia Ferrand"], ["2", "Edición El País"]]);
   assert.deepEqual(r.ask("are you my mother").books.map((b) => b.color).sort(), ["azul", "rojo"], "the same title under two stickers stays two books");
   const dahl = r.ask("matilda").books.find((b) => b.section === "Roald Dahl");
   assert.equal(dahl.language, "Inglés");
@@ -316,26 +326,28 @@ test("a book list with one row per copy groups them into books, keeps every colu
   assert.deepEqual([again.added, again.copies, again.skipped], [0, 0, 5], "the same file twice adds nothing");
 });
 
-test("the Libros sheet goes out and comes back in with editorial, idioma, sección and notes", () => {
+test("the Libros sheet goes out and comes back in with editorial, idioma, sección, references and notes", () => {
   r.updateBook(matilda.id, { publisher: "Alfaguara", language: "castellano", section: "Clásicos" });
   r.setCopyNote("B-0002", "Donación familia Ferrand");
+  r.setCopyRef("B-0001", " 1 ");
+  r.setCopyRef("B-0002", "2");
   assert.equal(r.book(matilda.id).language, "Español");
   const t = r.exportTable("books");
   const other = new Registry(emptyState(), { today: () => clock.day });
   other.importRows("books", [t.columns.map((c) => c[0]), ...t.rows.map((row) => row.map((v) => v ?? ""))]);
   const back = other.ask("matilda").books[0];
-  assert.deepEqual([back.publisher, back.language, back.section, back.copies.map((c) => [c.code, c.note])],
-    ["Alfaguara", "Español", "Clásicos", [["B-0001", ""], ["B-0002", "Donación familia Ferrand"]]]);
+  assert.deepEqual([back.publisher, back.language, back.section, back.copies.map((c) => [c.code, c.ref, c.note])],
+    ["Alfaguara", "Español", "Clásicos", [["B-0001", "1", ""], ["B-0002", "2", "Donación familia Ferrand"]]]);
 });
 
 test("books and copies saved before these fields existed load with them empty", () => {
   const old = JSON.parse(r.backup());
   for (const b of old.books) { delete b.publisher; delete b.language; delete b.section; }
-  for (const c of old.copies) delete c.note;
+  for (const c of old.copies) { delete c.note; delete c.ref; }
   const other = new Registry(emptyState(), { today: () => clock.day });
   other.restore(JSON.stringify(old));
   const m = other.book(matilda.id);
-  assert.deepEqual([m.publisher, m.language, m.section, m.copies[0].note], ["", "", "", ""]);
+  assert.deepEqual([m.publisher, m.language, m.section, m.copies[0].note, m.copies[0].ref], ["", "", "", "", ""]);
 });
 
 // ── age-band colour (the sticker on the real book) ──
@@ -390,7 +402,8 @@ test("an old backup without colours restores with every book unset, and the Libr
   r.updateBook(matilda.id, { color: "rojo" });
   const t = r.exportTable("books");
   const colorAt = t.columns.findIndex((c) => c[0] === "Color");
-  assert.equal(t.rows.find((row) => row[1] === "Matilda")[colorAt], "Rojo");
+  const titleAt = t.columns.findIndex((c) => c[0] === "Título");
+  assert.equal(t.rows.find((row) => row[titleAt] === "Matilda")[colorAt], "Rojo");
 });
 
 test("demo books come with their colours", () => {

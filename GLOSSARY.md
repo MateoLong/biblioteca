@@ -16,6 +16,10 @@ _Avoid_: copia, unidad, item
 The short label on an Ejemplar (B-0042 by default, or the school's own), unique across the library and typed or scanned at the counter.
 _Avoid_: ID, número de inventario
 
+**Referencia**:
+The number written on an Ejemplar to tell copies of the same Libro apart: 1, 2… (her catalogue wrote them "(1)", "(2)" after the title). Optional; shown as "(2)" before the Código.
+_Avoid_: número de ejemplar, copia 2
+
 **Color**:
 The age band a Libro is for, matching the coloured sticker on the real book: Azul (0 a 7 años), Rojo (7 a 10), Verde (10 a 12). A Libro without one is "Sin color" and shows grey. It belongs to the Libro, not to each Ejemplar.
 _Avoid_: categoría, nivel, edad (as the field name)

@@ -105,8 +105,9 @@ const ROUTES = [
     if (["title", "author", "color", "publisher", "language", "section"].some((k) => k in b)) registry.updateBook(id, b);
     return registry.book(id);
   }],
-  ["POST", /^\/api\/books\/(\d+)\/copies$/, (q, b, id) => registry.addCopy(id, b.code)],
+  ["POST", /^\/api\/books\/(\d+)\/copies$/, (q, b, id) => registry.addCopy(id, b.code, "", b.ref)],
   ["PATCH", /^\/api\/copies\/([^/]+)$/, (q, b, code) => ("note" in b ? registry.setCopyNote(decodeURIComponent(code), b.note)
+    : "ref" in b ? registry.setCopyRef(decodeURIComponent(code), b.ref)
     : registry.setCopyArchived(decodeURIComponent(code), Boolean(b.archived)))],
   ["GET", /^\/api\/students$/, (q) => registry.students(q.get("archived") === "1", q.get("grade") || null)],
   ["POST", /^\/api\/students$/, (q, b) => registry.addStudent(b.name || "", b.grade || "")],

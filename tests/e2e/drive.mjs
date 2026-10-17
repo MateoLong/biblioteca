@@ -597,7 +597,23 @@ try {
     await cp.press(`[data-note="${firstCode}"]`, "Tab");
     await cp.waitForTimeout(300);
     check("catalogue", "a copy's note can be edited on the book page", (await saved(cp)).copies.find((c) => c.code === firstCode)?.note === "Donación familia Ejemplo · forrado");
+    // ── F13b a reference per copy, 1 and 2, to tell the two copies apart ──
+    const brujasCodes = cs.copies.filter((c) => c.book_id === brujas.id).map((c) => c.code).sort();
+    for (const [i, code] of brujasCodes.entries()) {
+      await cp.fill(`[data-ref="${code}"]`, String(i + 1));
+      await cp.press(`[data-ref="${code}"]`, "Tab");
+      await cp.waitForSelector(`.toast:has-text('Referencia guardada en ${code}')`);
+    }
+    const refs = (await saved(cp)).copies.filter((c) => c.book_id === brujas.id).sort((a, b) => (a.code < b.code ? -1 : 1)).map((c) => c.ref);
+    check("copy-ref", "each copy's Referencia is saved on the book page", refs.join(",") === "1,2", refs.join(","));
+    await go(`libros/${brujas.id}`, cp);
+    check("copy-ref", "a new copy is offered the next number, 3", (await cp.inputValue("#add-copy [name=ref]")) === "3");
     await shot("13-libro-con-notas", true, cp);
+    await go("mostrador", cp);
+    await cp.fill("[data-testid=lend-book]", "brujas 2");
+    await cp.waitForSelector("#l-copy-list li[data-i]");
+    const opt = (await cp.textContent("#l-copy-list li[data-i='0']")).replace(/\s+/g, " ").trim();
+    check("copy-ref", "at the counter, 'brujas 2' finds copy (2) and shows its reference", opt.includes(`(2) ${brujasCodes[1]}`), opt);
     await cctx.close();
   }
 
