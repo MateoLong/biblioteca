@@ -21,7 +21,7 @@ The number written on an Ejemplar to tell copies of the same Libro apart: 1, 2�
 _Avoid_: número de ejemplar, copia 2
 
 **Color**:
-The age band a Libro is for, matching the coloured sticker on the real book: Azul (0 a 7 años), Rojo (7 a 10), Verde (10 a 12). A Libro without one is "Sin color" and shows grey. It belongs to the Libro, not to each Ejemplar.
+The age band a Libro is for, matching the coloured sticker on the real book: Azul (0 a 7 años), Rojo (7 a 10), Verde (10 a 12). A Libro without one is "Sin color" and shows grey, except a No ficción one, which shows fucsia. It belongs to the Libro, not to each Ejemplar.
 _Avoid_: categoría, nivel, edad (as the field name)
 
 **Sección**:
@@ -78,8 +78,12 @@ _Avoid_: extender, prorrogar
 **Límite**:
 How many Préstamos an Alumno may have at once. Going over it warns but never blocks.
 
+**Borrar**:
+To remove something typed by mistake: a Libro, Ejemplar or Alumno that was never lent, a Préstamo that never happened, or a Clase (its Alumnos who never borrowed go; those with history are archived). Always asks first.
+_Avoid_: eliminar
+
 **Archivar**:
-To hide a Libro or an Alumno from daily lists without losing its history. Nothing in the registry is deleted.
+To hide a Libro or an Alumno from daily lists without losing its history. Anything with history is archived, never borrado.
 _Avoid_: borrar, eliminar
 
 ## Safety

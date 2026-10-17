@@ -40,6 +40,7 @@
   --f-turquesa: #0b7e82;
   --f-rosa: #c23d7b;
   --f-naranja: #f08a24;
+  --f-fucsia: #c2189b; /* no ficción without an age band: a magenta well away from Tomate */
   --f-gris: #6c7391; /* a book whose age band is not set yet */
 
   --font-ui: "Baloo 2", "Atkinson Hyperlegible", system-ui, sans-serif;
@@ -343,6 +344,8 @@ a.loan-tile:hover { transform: translateY(-3px) rotate(-.5deg); box-shadow: var(
 .notice-error { background: var(--tomate-soft); border: 2px solid #f6c3bd; color: var(--tomate-ink); }
 .notice-ok { background: var(--pasto-soft); border: 2px solid #bfe5cc; color: var(--pasto-ink); }
 .notice .row { display: flex; gap: 8px; flex-wrap: wrap; }
+#grade-edit .row { display: flex; margin-top: 12px; }
+#grade-msg:not(:empty), #delete-msg:not(:empty) { margin: 14px 0; }
 
 /* the signature moment: a label being filled in */
 .result { display: grid; grid-template-columns: 210px 1fr; gap: 20px; align-items: center; }

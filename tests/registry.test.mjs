@@ -162,6 +162,50 @@ test("a loan that never happened can be deleted, even after it was returned", ()
   rejects(() => r.deleteLoan(loan.id), "not_found");
 });
 
+test("a class typed twice is joined by renaming it: the same student becomes one, with both histories", () => {
+  const twin = r.addStudent("martina lopez", "4to B");
+  const ana = r.addStudent("Ana Álvarez", "4to B");
+  r.lend("B-0001", twin.id, null, false, "2026-09-20");
+  r.returnCopy("B-0001", "2026-09-25");
+  r.lend("B-0003", martina.id, null, false, "2026-09-28");
+  assert.deepEqual(r.grades(), ["3°B", "4°B", "4to B"]);
+  assert.deepEqual(r.renameGrade("4to B", "4b"), { grade: "4°B", moved: 1, joined: 1 });
+  assert.deepEqual(r.grades(), ["3°B", "4°B"]);
+  assert.deepEqual(r.classSheet("4°B").students.map((x) => x.name), ["Martina López", "Joaquín Pereira", "Ana Álvarez"]);
+  assert.deepEqual(r.studentHistory(martina.id).map((l) => l.title), ["El Principito", "Matilda"]);
+  assert.equal(r.student(ana.id).grade, "4°B");
+  assert.equal(r.renameGrade("3 b", "3°C").grade, "3°C", "a plain rename");
+  rejects(() => r.renameGrade("9°Z", "1°A"), "not_found");
+  rejects(() => r.renameGrade("3°C", " "), "invalid");
+});
+
+test("a class can be deleted: students who never borrowed go, those with history are archived", () => {
+  const lola = r.addStudent("Lola Vega", "4°B");
+  r.lend("B-0001", joaquin.id);
+  rejects(() => r.deleteGrade("4°B"), "has_loans");
+  r.returnCopy("B-0001");
+  assert.deepEqual(r.deleteGrade("4b"), { deleted: 2, archived: 1 });
+  assert.deepEqual(r.grades(), ["3°B"]);
+  assert.ok(r.student(joaquin.id).archived);
+  assert.equal(r.studentHistory(joaquin.id).length, 1);
+  rejects(() => r.student(lola.id), "not_found");
+});
+
+test("a student, book or copy that was never lent can be deleted; one with history cannot", () => {
+  const extra = r.addStudent("Repetido", "4°B");
+  assert.equal(r.deleteStudent(extra.id).name, "Repetido");
+  rejects(() => r.student(extra.id), "not_found");
+  r.lend("B-0001", martina.id);
+  r.returnCopy("B-0001");
+  rejects(() => r.deleteStudent(martina.id), "has_history");
+  rejects(() => r.deleteBook(matilda.id), "has_history");
+  rejects(() => r.deleteCopy("B-0001"), "has_history");
+  assert.deepEqual(r.deleteCopy("B-0002").copies.map((c) => c.code), ["B-0001"]);
+  assert.equal(r.deleteBook(principito.id).title, "El Principito");
+  rejects(() => r.book(principito.id), "not_found");
+  assert.equal(r.state.copies.some((c) => c.book_id === principito.id), false);
+});
+
 test("the class sheet has a tab per class and a row per student in the order they were loaded", () => {
   const ana = r.addStudent("Ana Álvarez", "4 b");
   r.addStudent("Sin Clase", "");

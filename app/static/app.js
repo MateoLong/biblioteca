@@ -2,7 +2,7 @@
    Data lives on this device; local-api.js answers the same routes a server would. */
 import { start, call, download, flushed } from "./local-api.js";
 import { readXlsx } from "./xlsx.js";
-import { COLORS, typedDay } from "./registry.js";
+import { COLORS, typedDay, gradeKey, tidyGrade, norm } from "./registry.js";
 
 // ── small helpers ─────────────────────────────────────────────────────
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -57,15 +57,17 @@ const dayName = (iso) => `${weekday(iso)}${iso.slice(0, 4) !== TODAY.slice(0, 4)
 const dayWord = (iso) => (iso === TODAY ? "hoy" : iso === addDays(TODAY, -1) ? "ayer" : dayName(iso));
 
 // A book's forro colour is its age band, like the sticker on the real book; grey until she sets one.
+// No ficción books without a band wear fucsia, as on their shelf.
 // The print comes from the id, so two books of the same band still look different.
 const FORRO_BY_COLOR = { azul: "cobalto", rojo: "tomate", verde: "pasto" };
 const PRINTS = ["dots", "stripes", "stars", "checks", "waves", "plain"];
 // book: a book ({id, color}) or anything that carries one ({book_id, color}).
 function forro(book) {
   const n = Number(book.book_id ?? book.id) || 0;
-  const name = FORRO_BY_COLOR[book.color] || "gris";
+  const name = FORRO_BY_COLOR[book.color] || (isNoFiction(book) ? "fucsia" : "gris");
   return { style: `--c: var(--f-${name});`, print: PRINTS[(n * 7 + 1) % PRINTS.length], name };
 }
+const isNoFiction = (book) => norm(book.section).replace(/[^a-z]/g, "") === "noficcion";
 const forroAttrs = (book) => { const f = forro(book); return `style="${f.style}" data-print="${f.print}" data-color="${book.color || ""}"`; };
 const colorName = (color) => (color ? color[0].toUpperCase() + color.slice(1) : "Sin color");
 // Radio pills: Azul 0 a 7 · Rojo 7 a 10 · Verde 10 a 12 · Sin color.
@@ -105,6 +107,15 @@ function toast(message, { action, label = "Deshacer", error = false, ms = 7000 }
   setTimeout(() => el.remove(), ms);
 }
 const fail = (err) => toast(err.message, { error: true });
+// Ask before something that can't be undone: a yellow notice in slot with the question, "yes" and Cancelar.
+function askFirst(slot, question, yes, onYes) {
+  slot.innerHTML = `<div class="notice notice-warn" role="alert" data-testid="ask-first"><p>${question}</p>
+    <div class="row"><button type="button" class="btn btn-line btn-sm btn-danger" data-act="yes">${yes}</button>
+    <button type="button" class="btn btn-quiet btn-sm" data-act="no">Cancelar</button></div></div>`;
+  $("[data-act=no]", slot).addEventListener("click", () => { slot.innerHTML = ""; });
+  $("[data-act=yes]", slot).addEventListener("click", async () => { try { await onYes(); } catch (err) { fail(err); } });
+  $("[data-act=yes]", slot).focus();
+}
 
 // ── shared summary (header badge, demo strip, settings) ───────────────
 let summary = null;
@@ -646,7 +657,16 @@ async function viewClases(params) {
   sheet.grade = data.grade;
   const label = (g) => g || "Sin clase";
   main.innerHTML = `
-    <div class="page-head"><div><h1>Clases</h1><p>Como tu planilla: una hoja por clase y un renglón por alumno.</p></div></div>
+    <div class="page-head"><div><h1>Clases</h1><p>Como tu planilla: una hoja por clase y un renglón por alumno.</p></div>
+      <button type="button" class="btn btn-line" id="grade-toggle" aria-expanded="false" data-testid="grade-edit-toggle">Editar ${esc(label(data.grade))}</button></div>
+    <form class="panel" id="grade-edit" hidden novalidate data-testid="grade-edit">
+      <div class="edit-inline"><label class="field"><span>Nombre de la clase</span><input class="input" name="to" value="${esc(data.grade)}" placeholder="4°B" list="grade-list" data-testid="grade-name"></label>
+        <button class="btn btn-go" type="submit">Guardar</button></div>
+      <datalist id="grade-list">${data.tabs.filter((t) => t.grade && t.grade !== data.grade).map((t) => `<option value="${esc(t.grade)}">`).join("")}</datalist>
+      <p class="muted">Si la creaste dos veces, ponele el nombre de la otra y se juntan: un alumno que está en las dos queda uno solo, con todo lo que leyó.</p>
+      <div class="row"><button type="button" class="btn btn-quiet btn-danger" id="grade-delete" data-testid="grade-delete">Borrar ${esc(label(data.grade))}</button></div>
+      <div id="grade-msg"></div>
+    </form>
     <nav class="sheet-tabs" aria-label="Clases" data-testid="sheet-tabs">
       ${data.tabs.map((t) => `<a href="${sheetHref(t.grade)}" ${t.grade === data.grade ? 'aria-current="page"' : ""}>${esc(label(t.grade))} <span class="tab-count">${t.students}</span></a>`).join("")}
     </nav>
@@ -674,6 +694,7 @@ async function viewClases(params) {
       : `Estás anotando el <strong>${dayName(d.lent)} ${fmtDay(d.lent)}</strong>: los préstamos y las devoluciones de esta hoja quedan con ese día.`;
   });
   $$(".sheet-rows > li[data-student]").forEach((li) => wireSheetRow(li));
+  wireGradeEdit(data, label);
   $("#sheet-add").addEventListener("submit", async (e) => {
     e.preventDefault();
     const input = $("#sheet-new");
@@ -686,6 +707,36 @@ async function viewClases(params) {
       input.value = "";
       toast(`Agregado: ${s.name}${s.grade ? ` (${s.grade})` : ""}`);
     } catch (err) { fail(err); }
+  });
+}
+
+function wireGradeEdit(data, label) {
+  const form = $("#grade-edit"), toggle = $("#grade-toggle"), msg = $("#grade-msg");
+  toggle.addEventListener("click", () => { form.hidden = !form.hidden; toggle.setAttribute("aria-expanded", String(!form.hidden)); if (!form.hidden) form.to.select(); });
+  const rename = async (to) => {
+    const res = await api("PATCH", "/api/grades", { from: data.grade, to });
+    toast(res.joined ? `Listo: ${label(data.grade)} quedó junto con ${res.grade} (${plural(res.joined, "alumno repetido", "alumnos repetidos")} quedaron en uno).` : `Listo: ahora se llama ${res.grade}.`);
+    sheet.grade = res.grade;
+    if (location.hash === sheetHref(res.grade)) route(); else location.hash = sheetHref(res.grade);
+  };
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const to = tidyGrade(form.to.value);
+    if (!to) { msg.innerHTML = `<div class="notice notice-error" role="alert">Falta el nombre de la clase.</div>`; return; }
+    const other = data.tabs.find((t) => t.grade && t.grade !== data.grade && gradeKey(t.grade) === gradeKey(to));
+    if (!other) { rename(to).catch(fail); return; }
+    askFirst(msg, `Ya hay una clase <strong>${esc(other.grade)}</strong>. ¿Juntar ${esc(label(data.grade))} con ${esc(other.grade)}? Los alumnos que están en las dos quedan uno solo, con todo lo que leyeron.`, `Sí, juntarlas`, () => rename(to));
+  });
+  $("#grade-delete").addEventListener("click", () => {
+    const out = data.students.filter((s) => s.loans.length);
+    if (out.length) { msg.innerHTML = `<div class="notice notice-error" role="alert">No se puede borrar: ${esc(out.map((s) => s.name).join(", "))} todavía ${out.length === 1 ? "tiene" : "tienen"} libros sin devolver.</div>`; return; }
+    const read = data.students.filter((s) => s.times_borrowed).length, none = data.students.length - read;
+    askFirst(msg, `¿Borrar ${esc(label(data.grade))}? ${none ? `${plural(none, "alumno que nunca se llevó un libro se borra", "alumnos que nunca se llevaron un libro se borran")}.` : ""} ${read ? `${plural(read, "alumno con historial queda archivado", "alumnos con historial quedan archivados")}: lo que leyeron no se pierde.` : ""}`, "Sí, borrarla", async () => {
+      await api("DELETE", "/api/grades", { grade: data.grade });
+      toast(`Borrada: ${label(data.grade)}.`);
+      sheet.grade = null;
+      if (location.hash === "#/clases") route(); else location.hash = "#/clases";
+    });
   });
 }
 
@@ -890,19 +941,11 @@ function wireLoanActions(root = main) {
     } catch (err) { $(".loan-fix-msg", b.closest(".loan-fix")).innerHTML = `<div class="notice notice-error" role="alert">${esc(err.message)}</div>`; }
   }));
   $$("[data-delete]", root).forEach((b) => b.addEventListener("click", () => {
-    const msg = $(".loan-fix-msg", b.closest(".loan-fix"));
-    msg.innerHTML = `<div class="notice notice-warn" role="alert" data-testid="delete-confirm"><p>¿Borrar el préstamo de ${esc(b.dataset.what)}? Desaparece del historial.</p>
-      <div class="row"><button type="button" class="btn btn-line btn-sm btn-danger" data-act="yes">Sí, borrarlo</button>
-      <button type="button" class="btn btn-quiet btn-sm" data-act="no">Cancelar</button></div></div>`;
-    $("[data-act=no]", msg).addEventListener("click", () => { msg.innerHTML = ""; });
-    $("[data-act=yes]", msg).addEventListener("click", async () => {
-      try {
-        const loan = await api("DELETE", `/api/loans/${b.dataset.delete}`, { mistake: true });
-        toast(`Borrado: ${loan.title} ya no figura en lo que leyó ${loan.student}.`);
-        route();
-      } catch (err) { fail(err); }
+    askFirst($(".loan-fix-msg", b.closest(".loan-fix")), `¿Borrar el préstamo de ${esc(b.dataset.what)}? Desaparece del historial.`, "Sí, borrarlo", async () => {
+      const loan = await api("DELETE", `/api/loans/${b.dataset.delete}`, { mistake: true });
+      toast(`Borrado: ${loan.title} ya no figura en lo que leyó ${loan.student}.`);
+      route();
     });
-    $("[data-act=yes]", msg).focus();
   }));
 }
 
@@ -1020,10 +1063,12 @@ async function viewLibro(id) {
       <span class="forro" ${forroAttrs(b)}></span>
       <div><h1>${esc(b.title)}</h1><p class="muted" style="font-size:1.125rem">${esc(b.author)}</p>
         ${b.publisher ? `<p class="muted" data-testid="book-publisher">${esc(b.publisher)}</p>` : ""}
-        <div class="stat-line">${b.language ? `<span data-testid="book-language">${esc(b.language)}</span>` : ""}${b.section ? `<span data-testid="book-section"><a href="#/libros?${new URLSearchParams({ seccion: b.section })}">${esc(b.section)}</a></span>` : ""}<span data-testid="book-color"><span class="dot" style="--c: var(--f-${forro(b).name})"></span>${b.color ? `<strong>${colorName(b.color)}</strong> · ${COLORS[b.color]}` : "<strong>Sin color</strong> · tocá Editar para ponerle uno"}</span><span><strong>${b.available}</strong> de ${b.total} en la biblioteca</span><span>Prestado <strong>${plural(b.times_lent, "vez", "veces")}</strong></span>${b.archived ? '<span class="pill pill-off">Archivado</span>' : ""}</div></div>
+        <div class="stat-line">${b.language ? `<span data-testid="book-language">${esc(b.language)}</span>` : ""}${b.section ? `<span data-testid="book-section"><a href="#/libros?${new URLSearchParams({ seccion: b.section })}">${esc(b.section)}</a></span>` : ""}<span data-testid="book-color"><span class="dot" style="--c: var(--f-${forro(b).name})"></span>${b.color ? `<strong>${colorName(b.color)}</strong> · ${COLORS[b.color]}` : isNoFiction(b) ? "<strong>Fucsia</strong> · sin edad; tocá Editar si tiene una" : "<strong>Sin color</strong> · tocá Editar para ponerle uno"}</span><span><strong>${b.available}</strong> de ${b.total} en la biblioteca</span><span>Prestado <strong>${plural(b.times_lent, "vez", "veces")}</strong></span>${b.archived ? '<span class="pill pill-off">Archivado</span>' : ""}</div></div>
       <div class="btn-col"><button type="button" class="btn btn-line" id="edit-toggle">Editar</button>
-        <button type="button" class="btn btn-quiet ${b.archived ? "" : "btn-danger"}" id="archive">${icon("archive")}${b.archived ? "Reactivar" : "Archivar"}</button></div>
+        <button type="button" class="btn btn-quiet ${b.archived ? "" : "btn-danger"}" id="archive">${icon("archive")}${b.archived ? "Reactivar" : "Archivar"}</button>
+        ${b.times_lent ? "" : `<button type="button" class="btn btn-quiet btn-danger" id="delete" data-testid="delete-book">${icon("x")}Borrar</button>`}</div>
     </div>
+    <div id="delete-msg"></div>
     <form class="panel" id="edit-form" hidden>${colorPicks(b.color)}<div class="edit-inline three">
       <label class="field"><span>Título</span><input class="input" name="title" value="${esc(b.title)}"></label>
       <label class="field"><span>Autor</span><input class="input" name="author" value="${esc(b.author)}"></label>
@@ -1044,7 +1089,7 @@ async function viewLibro(id) {
         <td>${c.loan ? `<a class="student-link" href="${studentHref(c.loan.student_id)}">${esc(c.loan.student)}</a> <span class="muted">${esc(c.loan.grade)} · ${c.loan.overdue ? `<span class="late-days">venció el ${fmtDay(c.loan.due_on)}</span>` : `vuelve ${fmtRel(c.loan.due_on)}`}</span>` : '<span class="muted">—</span>'}</td>
         <td class="note-cell"><input class="input note-edit" value="${esc(c.note)}" placeholder="donación, edición…" data-note="${esc(c.code)}" aria-label="Notas del ejemplar ${esc(c.code)}"></td>
         <td class="actions">${c.loan ? `<button type="button" class="btn btn-line btn-sm" data-return="${esc(c.code)}">Devolver</button>`
-          : `<button type="button" class="btn btn-quiet btn-sm" data-copy="${esc(c.code)}" data-archived="${c.archived ? 0 : 1}">${c.archived ? "Reactivar" : "Dar de baja"}</button>`}</td>
+          : `<button type="button" class="btn btn-quiet btn-sm" data-copy="${esc(c.code)}" data-archived="${c.archived ? 0 : 1}">${c.archived ? "Reactivar" : "Dar de baja"}</button>${c.times_lent ? "" : `<button type="button" class="btn btn-quiet btn-sm btn-danger" data-delete-copy="${esc(c.code)}">Borrar</button>`}`}</td>
       </tr>`).join("")}</tbody></table></div>
       ${b.archived ? "" : `<form id="add-copy" class="toolbar" style="margin-top:14px"><label class="field" style="flex:0 1 260px"><span>Agregar ejemplar</span><input class="input" name="code" placeholder="Código (opcional)"></label>
         <label class="field" style="flex:0 1 140px"><span>Referencia</span><input class="input" name="ref" value="${esc(nextRef(b.copies))}" placeholder="1, 2…"></label><button class="btn btn-line" type="submit" style="align-self:end">${icon("plus")}Agregar</button></form>`}
@@ -1067,6 +1112,16 @@ async function viewLibro(id) {
       route();
     } catch (err) { fail(err); }
   });
+  $("#delete")?.addEventListener("click", () => askFirst($("#delete-msg"), `¿Borrar <strong>${esc(b.title)}</strong> y ${b.copies.length === 1 ? "su ejemplar" : `sus ${b.copies.length} ejemplares`}? Nunca se prestó, así que no queda historial.`, "Sí, borrarlo", async () => {
+    await api("DELETE", `/api/books/${id}`);
+    toast(`Borrado: ${b.title}.`);
+    location.hash = "#/libros";
+  }));
+  $$("[data-delete-copy]").forEach((btn) => btn.addEventListener("click", () => askFirst($("#delete-msg"), `¿Borrar el ejemplar <strong>${esc(btn.dataset.deleteCopy)}</strong>? Nunca se prestó.`, "Sí, borrarlo", async () => {
+    await api("DELETE", `/api/copies/${encodeURIComponent(btn.dataset.deleteCopy)}`);
+    toast(`Borrado: ${btn.dataset.deleteCopy}.`);
+    route();
+  })));
   $$("[data-copy]").forEach((btn) => btn.addEventListener("click", async () => {
     try { await api("PATCH", `/api/copies/${encodeURIComponent(btn.dataset.copy)}`, { archived: btn.dataset.archived === "1" }); route(); } catch (err) { fail(err); }
   }));
@@ -1195,8 +1250,10 @@ async function viewAlumno(id) {
         <div class="stat-line"><span>${esc(s.grade || "Sin clase")}</span><span>Se llevó <strong>${plural(s.times_borrowed, "libro", "libros")}</strong> en total</span>${s.archived ? '<span class="pill pill-off">Archivado</span>' : ""}</div></div>
       <div class="btn-col">${s.archived ? "" : `<a class="btn btn-go" href="#/mostrador?alumno=${s.id}">${icon("book-marked")}Prestarle un libro</a>`}
         <button type="button" class="btn btn-line" id="edit-toggle">Editar</button>
-        <button type="button" class="btn btn-quiet ${s.archived ? "" : "btn-danger"}" id="archive">${icon("archive")}${s.archived ? "Reactivar" : "Archivar"}</button></div>
+        <button type="button" class="btn btn-quiet ${s.archived ? "" : "btn-danger"}" id="archive">${icon("archive")}${s.archived ? "Reactivar" : "Archivar"}</button>
+        ${s.times_borrowed ? "" : `<button type="button" class="btn btn-quiet btn-danger" id="delete" data-testid="delete-student">${icon("x")}Borrar</button>`}</div>
     </div>
+    <div id="delete-msg"></div>
     <form class="panel" id="edit-form" hidden><div class="edit-inline">
       <label class="field"><span>Nombre</span><input class="input" name="name" value="${esc(s.name)}"></label>
       <label class="field"><span>Clase</span><input class="input" name="grade" value="${esc(s.grade)}"></label>
@@ -1213,6 +1270,11 @@ async function viewAlumno(id) {
     </section>
     <section class="section" aria-labelledby="hist-h"><h2 id="hist-h">Lo que leyó <small>${plural(s.history.length, "préstamo", "préstamos")}</small></h2>${historyTable(s.history, "book", s.archived ? "Nunca se llevó un libro." : "Todavía no se llevó ningún libro. Prestale uno con el botón amarillo de arriba.", true)}</section>`;
 
+  $("#delete")?.addEventListener("click", () => askFirst($("#delete-msg"), `¿Borrar a <strong>${esc(s.name)}</strong>? Nunca se llevó un libro, así que no queda nada de su historial.`, "Sí, borrarlo", async () => {
+    await api("DELETE", `/api/students/${id}`);
+    toast(`Borrado: ${s.name}.`);
+    location.hash = "#/alumnos";
+  }));
   $("#edit-toggle").addEventListener("click", () => { $("#edit-form").hidden = !$("#edit-form").hidden; });
   $("#edit-form").addEventListener("submit", async (e) => {
     e.preventDefault();

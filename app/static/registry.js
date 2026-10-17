@@ -301,6 +301,22 @@ export class Registry {
     return this.book(c.book_id);
   }
 
+  /** A book typed by mistake. Only one that was never lent: a book with history is archived instead. */
+  deleteBook(bookId) {
+    const b = this.book(bookId);
+    if (b.times_lent) throw new RegistryError("has_history", `No se puede borrar: ${b.title} ya se prestó ${b.times_lent === 1 ? "una vez" : `${b.times_lent} veces`}. Archivalo para sacarlo de las listas.`);
+    this._write((s) => { s.books = s.books.filter((x) => x.id !== b.id); s.copies = s.copies.filter((c) => c.book_id !== b.id); });
+    return b;
+  }
+
+  /** A copy added by mistake. Only one that was never lent: otherwise it is dado de baja. */
+  deleteCopy(code) {
+    const c = this._requireCopy(code);
+    if (this.state.loans.some((l) => l.copy_id === c.id)) throw new RegistryError("has_history", `No se puede borrar: ${c.code} ya se prestó. Dalo de baja para sacarlo de circulación.`);
+    this._write((s) => { s.copies = s.copies.filter((x) => x.id !== c.id); });
+    return this.book(c.book_id);
+  }
+
   _requireBook(id) {
     const b = this.state.books.find((x) => x.id === Number(id));
     if (!b) throw new RegistryError("not_found", "No encontré ese libro.");
@@ -317,7 +333,7 @@ export class Registry {
     const b = { ...this._requireBook(bookId) };
     const copies = this.state.copies.filter((c) => c.book_id === b.id)
       .sort(byKey((c) => [c.code]))
-      .map((c) => { const loan = this._openLoanForCopy(c.id); return { ...c, loan: loan ? this._present(loan) : null }; });
+      .map((c) => { const loan = this._openLoanForCopy(c.id); return { ...c, loan: loan ? this._present(loan) : null, times_lent: this.state.loans.filter((l) => l.copy_id === c.id).length }; });
     b.copies = copies;
     b.available = copies.filter((c) => !c.archived && !c.loan).length;
     b.total = copies.filter((c) => !c.archived).length;
@@ -366,6 +382,67 @@ export class Registry {
     }
     this._write((s) => { s.students.find((x) => x.id === st.id).archived = Boolean(archived); });
     return this.student(studentId);
+  }
+
+  /** A student typed by mistake. Only one who never borrowed: a student with history is archived instead. */
+  deleteStudent(studentId) {
+    const st = this.student(studentId);
+    if (st.times_borrowed) throw new RegistryError("has_history", `No se puede borrar: ${st.name} ya se llevó ${st.times_borrowed === 1 ? "un libro" : `${st.times_borrowed} libros`}. Archivalo para sacarlo de las listas.`);
+    this._write((s) => { s.students = s.students.filter((x) => x.id !== st.id); });
+    return st;
+  }
+
+  _inGrade(grade) {
+    const key = gradeKey(grade);
+    return this.state.students.filter((s) => (key ? gradeKey(s.grade) === key : !s.grade));
+  }
+
+  /**
+   * Rename a class (grade "" is the students without one). Renaming onto a class that exists joins
+   * the two: a student who is in both (same name) becomes one, with both histories.
+   */
+  renameGrade(from, to) {
+    to = tidyGrade(to);
+    if (!to) throw new RegistryError("invalid", "Falta el nombre de la clase.");
+    const moving = this._inGrade(from);
+    if (!moving.length) throw new RegistryError("not_found", "No encontré esa clase.");
+    if (gradeKey(to) === gradeKey(from) && to === moving[0].grade) return { grade: to, moved: 0, joined: 0 };
+    let moved = 0, joined = 0;
+    this._write((s) => {
+      const there = s.students.filter((x) => gradeKey(x.grade) === gradeKey(to) && !moving.some((m) => m.id === x.id));
+      for (const m of moving) {
+        const twin = there.find((x) => norm(x.name) === norm(m.name));
+        const st = s.students.find((x) => x.id === m.id);
+        if (twin) {
+          s.loans.forEach((l) => { if (l.student_id === st.id) l.student_id = twin.id; });
+          twin.archived = twin.archived && st.archived;
+          s.students = s.students.filter((x) => x.id !== st.id);
+          joined++;
+        } else {
+          st.grade = there[0]?.grade || to;
+          moved++;
+        }
+      }
+    });
+    return { grade: this._inGrade(to)[0]?.grade || to, moved, joined };
+  }
+
+  /**
+   * Remove a class: its students who never borrowed are deleted; those with history are archived,
+   * so their history stays. Refused while any of them still has a book.
+   */
+  deleteGrade(grade) {
+    const students = this._inGrade(grade);
+    if (!students.length) throw new RegistryError("not_found", "No encontré esa clase.");
+    const out = students.filter((st) => this._openLoans().some((l) => l.student_id === st.id));
+    if (out.length) throw new RegistryError("has_loans", `No se puede borrar la clase: ${out.map((x) => x.name).join(", ")} todavía ${out.length === 1 ? "tiene" : "tienen"} libros sin devolver.`);
+    const keep = new Set(students.filter((st) => this.state.loans.some((l) => l.student_id === st.id)).map((st) => st.id));
+    const gone = new Set(students.map((st) => st.id));
+    this._write((s) => {
+      s.students = s.students.filter((x) => !gone.has(x.id) || keep.has(x.id));
+      s.students.forEach((x) => { if (keep.has(x.id)) x.archived = true; });
+    });
+    return { deleted: gone.size - keep.size, archived: keep.size };
   }
 
   _requireStudent(id) {
@@ -417,7 +494,7 @@ export class Registry {
     const open = l.returned_on == null;
     const daysLate = open ? Math.max(0, daysBetween(l.due_on, this.today())) : 0;
     return {
-      id: l.id, code: c.code, ref: c.ref, book_id: b.id, title: b.title, author: b.author, color: b.color,
+      id: l.id, code: c.code, ref: c.ref, book_id: b.id, title: b.title, author: b.author, color: b.color, section: b.section,
       student_id: s.id, student: s.name, grade: s.grade,
       lent_on: l.lent_on, due_on: l.due_on, returned_on: l.returned_on ?? null,
       open, days_late: daysLate, overdue: daysLate > 0,
@@ -585,7 +662,7 @@ export class Registry {
   topBooks(limit = 10) {
     const counts = new Map();
     for (const l of this.state.loans) { const b = this._copy(l.copy_id).book_id; counts.set(b, (counts.get(b) || 0) + 1); }
-    return [...counts].map(([id, n]) => { const b = this.state.books.find((x) => x.id === id); return { id, title: b.title, author: b.author, color: b.color, times_lent: n }; })
+    return [...counts].map(([id, n]) => { const b = this.state.books.find((x) => x.id === id); return { id, title: b.title, author: b.author, color: b.color, section: b.section, times_lent: n }; })
       .sort((a, b) => b.times_lent - a.times_lent || (a.title < b.title ? -1 : 1)).slice(0, limit);
   }
 
@@ -665,7 +742,7 @@ export class Registry {
       const loan = this._openLoanForCopy(c.id);
       if (mode !== "any" && Boolean(loan) !== (mode === "return")) continue;
       const s = loan ? this.state.students.find((x) => x.id === loan.student_id) : null;
-      const row = { code: c.code, ref: c.ref, book_id: b.id, title: b.title, author: b.author, color: b.color, loan_id: loan?.id ?? null,
+      const row = { code: c.code, ref: c.ref, book_id: b.id, title: b.title, author: b.author, color: b.color, section: b.section, loan_id: loan?.id ?? null,
         student: s?.name ?? null, grade: s?.grade ?? null, due_on: loan?.due_on ?? null };
       const hay = norm([c.code, c.ref, b.title, b.author, s?.name || "", s?.grade || ""].join(" "));
       // "matilda 2": the copy whose reference is 2 comes first.

@@ -95,6 +95,11 @@ const ROUTES = [
     : "code" in b ? registry.setLoanCopy(id, b.code || "")
     : registry.setDue(id, b.due_on || ""))],
   ["GET", /^\/api\/sheet$/, (q) => registry.classSheet(q.has("grade") ? q.get("grade") : null)],
+  ["PATCH", /^\/api\/grades$/, (q, b) => registry.renameGrade(b.from ?? "", b.to || "")],
+  ["DELETE", /^\/api\/grades$/, (q, b) => registry.deleteGrade(b.grade ?? "")],
+  ["DELETE", /^\/api\/students\/(\d+)$/, (q, b, id) => registry.deleteStudent(id)],
+  ["DELETE", /^\/api\/books\/(\d+)$/, (q, b, id) => registry.deleteBook(id)],
+  ["DELETE", /^\/api\/copies\/([^/]+)$/, (q, b, code) => registry.deleteCopy(decodeURIComponent(code))],
   ["GET", /^\/api\/sheet\/history$/, (q) => registry.classHistory(q.get("grade") || "")],
   ["GET", /^\/api\/books$/, (q) => registry.books(q.get("archived") === "1")],
   ["POST", /^\/api\/books$/, (q, b) => registry.addBook(b.title || "", b.author || "", Number(b.copies) || 1,

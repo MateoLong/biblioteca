@@ -252,6 +252,26 @@ try {
   await go(`libros/${corazon.id}`);
   check("hints", "a book nobody took yet says where to lend it", (await page.textContent("[data-testid=history-empty]")).includes("Se presta desde el Mostrador"));
 
+  // ── F8b no ficción without an age band wears fucsia; a book or copy never lent can be deleted ──
+  await page.tap("#edit-toggle");
+  await page.tap("#edit-form [data-testid=color-none]");
+  await page.fill("#edit-form [name=section]", "No ficción");
+  await page.tap("#edit-form button[type=submit]");
+  await page.waitForFunction(() => document.querySelector("[data-testid=book-color]")?.textContent.includes("Fucsia"));
+  const fucsia = await page.$eval(".detail-head .forro", (el) => getComputedStyle(el).backgroundColor);
+  check("fucsia", "a No ficción book with no colour wears fucsia", fucsia === "rgb(194, 24, 155)", fucsia);
+  const corazonCopies = (await saved()).copies.filter((c) => c.book_id === corazon.id).map((c) => c.code);
+  await page.tap(`[data-delete-copy="${corazonCopies[1]}"]`);
+  await page.tap("[data-testid=ask-first] [data-act=yes]");
+  await page.waitForSelector(`.toast:has-text('Borrado: ${corazonCopies[1]}')`);
+  check("delete", "a copy never lent can be deleted, after asking", !(await saved()).copies.some((c) => c.code === corazonCopies[1]));
+  await page.tap("[data-testid=delete-book]");
+  await shot("08d-libro-borrar", false);
+  await page.tap("[data-testid=ask-first] [data-act=yes]");
+  await page.waitForFunction(() => location.hash === "#/libros");
+  const afterBook = await saved();
+  check("delete", "a book never lent can be deleted with its copies", !afterBook.books.some((b) => b.id === corazon.id) && !afterBook.copies.some((c) => c.book_id === corazon.id));
+
   // ── F8 add a student; import by pasting rows (the iPad way) and by file ──
   await go("alumnos");
   await page.tap("[data-testid=add-student-toggle]");
@@ -359,7 +379,7 @@ try {
 
     await page.tap(`[data-testid=student-loans] button[data-fix="${out.id}"]`);
     await page.tap(`#fix-${out.id} [data-delete]`);
-    await page.waitForSelector(`#fix-${out.id} [data-testid=delete-confirm]`);
+    await page.waitForSelector(`#fix-${out.id} [data-testid=ask-first]`);
     await shot("10c-alumno-borrar", false);
     check("loan-fix", "Borrar asks first and changes nothing yet", (await saved()).loans.some((l) => l.id === out.id));
     await page.tap(`#fix-${out.id} [data-act=yes]`);
@@ -402,7 +422,7 @@ try {
   await page.waitForSelector("[data-testid=demo-strip][hidden]", { state: "attached" });
   st = await saved();
   readback.afterClear = { demo: st.books.filter((b) => b.is_demo).length + st.students.filter((s) => s.is_demo).length, books: st.books.length, students: st.students.length, loans: st.loans.length };
-  check("clear-demo", "only demo rows are gone; the 4 real books, 6 real students and Ana Nueva's loan stay", JSON.stringify(readback.afterClear) === '{"demo":0,"books":4,"students":6,"loans":1}', JSON.stringify(readback.afterClear));
+  check("clear-demo", "only demo rows are gone; the 3 real books (Corazón was deleted), 6 real students and Ana Nueva's loan stay", JSON.stringify(readback.afterClear) === '{"demo":0,"books":3,"students":6,"loans":1}', JSON.stringify(readback.afterClear));
   await page.evaluate(() => { globalThis.BIBLIO_TODAY = "2026-10-12"; location.hash = "#/atrasados"; });
   await page.evaluate(() => { location.hash = "#/mostrador"; });
   await page.waitForTimeout(300);
@@ -516,6 +536,40 @@ try {
     await cp.reload();
     await cp.waitForSelector("[data-testid=sheet]");
     check("clases", "after reopening, the sheet is still on 4°B", (await cp.textContent("[data-testid=sheet-tabs] [aria-current=page]")).includes("4°B"));
+
+    // ── F12b a class typed twice is joined by renaming it; a class and a student can be deleted ──
+    await go("alumnos", cp);
+    await cp.tap("[data-testid=add-student-toggle]");
+    for (const [name, grade] of [["Martina López", "4to B"], ["Tomás Rey", "4to B"], ["Prueba Uno", "9°Z"], ["Prueba Dos", "9°Z"]]) {
+      await cp.fill("[data-testid=student-name]", name);
+      await cp.fill("[data-testid=student-grade]", grade);
+      await cp.tap("[data-testid=student-save]");
+      await cp.waitForSelector(`.toast:has-text('Agregado: ${name}')`);
+    }
+    await go("clases?clase=4to%20B", cp);
+    await cp.tap("[data-testid=grade-edit-toggle]");
+    await cp.fill("[data-testid=grade-name]", "4b");
+    await cp.press("[data-testid=grade-name]", "Enter");
+    await cp.waitForSelector("#grade-msg [data-testid=ask-first]");
+    await shot("12b-clase-juntar", false, cp);
+    await cp.tap("#grade-msg [data-act=yes]");
+    await cp.waitForFunction(() => decodeURIComponent(location.hash).includes("clase=4°B"));
+    cs = await saved(cp);
+    check("grades", "renaming 4to B to 4b joins it with 4°B: one Martina López, Tomás moved in",
+      !cs.students.some((x) => x.grade === "4to B") && cs.students.filter((x) => x.name === "Martina López").length === 1 && studentNamed(cs, "Tomás Rey")?.grade === "4°B",
+      JSON.stringify(cs.students.filter((x) => /Martina López|Tomás Rey/.test(x.name)).map((x) => [x.name, x.grade])));
+    await go(`alumnos/${studentNamed(cs, "Prueba Uno").id}`, cp);
+    await cp.tap("[data-testid=delete-student]");
+    await cp.tap("[data-testid=ask-first] [data-act=yes]");
+    await cp.waitForFunction(() => location.hash === "#/alumnos");
+    check("delete", "a student who never borrowed can be deleted, after asking", !studentNamed(await saved(cp), "Prueba Uno"));
+    await go("clases?clase=9%C2%B0Z", cp);
+    await cp.tap("[data-testid=grade-edit-toggle]");
+    await cp.tap("[data-testid=grade-delete]");
+    await cp.tap("#grade-msg [data-act=yes]");
+    await cp.waitForSelector(".toast:has-text('Borrada: 9°Z')");
+    cs = await saved(cp);
+    check("delete", "Borrar clase removes a class whose students never borrowed", !cs.students.some((x) => x.grade === "9°Z"));
 
     // The counter: "Prestado" is today, and can be another day.
     await go("mostrador", cp);
